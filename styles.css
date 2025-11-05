@@ -1,0 +1,32 @@
+/* Line highlight beacon animation - fades out smoothly */
+@keyframes beacon-line-fade {
+	0% {
+		opacity: 1;
+	}
+	70% {
+		opacity: 0.6;
+	}
+	100% {
+		opacity: 0;
+	}
+}
+
+.obsidian-beacon-line {
+	/* Styles are set inline via JavaScript for dynamic colors */
+}
+
+.obsidian-beacon-cursor-line {
+	/* Styles are set inline via JavaScript for dynamic colors */
+}
+
+@keyframes beacon-char-fade {
+	0% {
+		opacity: 0.9;
+	}
+	70% {
+		opacity: 0.6;
+	}
+	100% {
+		opacity: 0;
+	}
+}

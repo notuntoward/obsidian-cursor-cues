@@ -1,0 +1,467 @@
+import { Plugin, MarkdownView } from 'obsidian';
+import { EditorView, ViewPlugin, ViewUpdate, Decoration, DecorationSet, WidgetType } from '@codemirror/view';
+import { RangeSetBuilder } from '@codemirror/state';
+import { CursorCuesPluginSettings, DEFAULT_SETTINGS, CursorCuesSettingTab } from './settings';
+
+class EndOfLineWidget extends WidgetType {
+	constructor(private markerColor: string, private contrastColor: string) {
+		super();
+	}
+
+	toDOM() {
+		const span = document.createElement('span');
+		span.textContent = ' ';
+		span.style.cssText = `
+		background-color: ${this.markerColor};
+		color: ${this.contrastColor};
+		display: inline-block;
+		width: 0.5em;
+		`;
+		return span;
+	}
+}
+
+export default class CursorCuesPlugin extends Plugin {
+	settings: CursorCuesPluginSettings;
+
+	private lastCursorPosition: number | null = null;
+	private lastCursorCoords: { x: number, y: number } | null = null;
+	private keyPressStartCoords: { x: number, y: number } | null = null;
+	private pendingKeyPressStartCapture: boolean = false;
+	private wasJumpKey: boolean = false;
+
+	private lastViewChange: number = 0;
+	private cueTimeout: NodeJS.Timeout | null = null;
+	private resetCueTimeout: NodeJS.Timeout | null = null;
+	private scrollDebounceTimer: NodeJS.Timeout | null = null;
+	private lastScrollPosition: number = 0;
+	private mouseDownFlag: boolean = false;
+	private isKeyHeld: boolean = false;
+	private cueFlashActive: boolean = false;
+	private decorationView: EditorView | null = null;
+	private pendingCueTrigger: string | null = null;
+
+	async onload() {
+		await this.loadSettings();
+		this.addSettingTab(new CursorCuesSettingTab(this.app, this));
+
+		const decorationPlugin = this.createCueDecorationPlugin();
+		this.registerEditorExtension([
+			decorationPlugin,
+			this.createDOMEventHandlers(),
+			this.createUpdateListener()
+		]);
+
+		this.registerEvent(
+			this.app.workspace.on('active-leaf-change', () => {
+				if (this.settings.flashOnWindowChanges) {
+					this.scheduleCue('view-change', false);
+				}
+			})
+		);
+
+		this.registerEvent(
+			this.app.workspace.on('layout-change', () => {
+				if (this.settings.flashOnWindowChanges) {
+					this.scheduleCue('layout-change', false);
+				}
+			})
+		);
+
+		this.registerEvent(
+			this.app.workspace.on('css-change', () => {
+				this.app.workspace.updateOptions();
+			})
+		);
+
+		window.addEventListener('keydown', (event: KeyboardEvent) => {
+			const isMovementKey = this.isNavigationKey(event);
+			const isJumpKey = this.isJumpNavigationKey(event);
+
+			if (isMovementKey && !this.isKeyHeld) {
+				console.log('DEBUG: keydown -', event.key);
+				this.isKeyHeld = true;
+				this.pendingKeyPressStartCapture = true;
+				this.wasJumpKey = isJumpKey;
+			}
+		}, true);
+
+		window.addEventListener('keyup', (event: KeyboardEvent) => {
+			if (this.isNavigationKey(event) && this.isKeyHeld) {
+				console.log('DEBUG: keyup -', event.key);
+				this.handleKeyRelease();
+			}
+		}, true);
+	}
+
+	createCueDecorationPlugin() {
+		const plugin = this;
+		return ViewPlugin.fromClass(class {
+			decorations: DecorationSet;
+
+			constructor(view: EditorView) {
+				this.decorations = Decoration.none;
+				plugin.decorationView = view;
+			}
+
+			update(update: ViewUpdate) {
+				this.decorations = this.buildDecorations(update.view);
+			}
+
+			buildDecorations(view: EditorView): DecorationSet {
+				const builder = new RangeSetBuilder();
+				if (!view.hasFocus) {
+					return builder.finish() as DecorationSet;
+				}
+
+				const showAlwaysOn = plugin.settings.blockCursorMode === 'always';
+				const showFlash = plugin.settings.blockCursorMode === 'flash' && plugin.cueFlashActive;
+				const shouldShowCursor = showAlwaysOn || showFlash;
+
+				if (!shouldShowCursor) {
+					return builder.finish() as DecorationSet;
+				}
+
+				const pos = view.state.selection.main.head;
+				const markerColor = plugin.getCueColor().color;
+				const contrastColor = plugin.getContrastColor(markerColor);
+
+				if (pos >= view.state.doc.length) {
+					if (view.state.doc.length > 0) {
+						const widget = Decoration.widget({
+							widget: new EndOfLineWidget(markerColor, contrastColor),
+							side: 1
+						});
+						builder.add(view.state.doc.length, view.state.doc.length, widget);
+					}
+				} else {
+					const char = view.state.doc.sliceString(pos, pos + 1);
+					if (char === '\n' || char === '') {
+						const widget = Decoration.widget({
+							widget: new EndOfLineWidget(markerColor, contrastColor),
+							side: 1
+						});
+						builder.add(pos, pos, widget);
+					} else {
+						const decoration = Decoration.mark({
+							attributes: {
+								style: `background-color: ${markerColor}; color: ${contrastColor};`
+							}
+						});
+						builder.add(pos, pos + 1, decoration);
+					}
+				}
+
+				return builder.finish() as DecorationSet;
+			}
+		}, {
+			decorations: v => v.decorations
+		});
+	}
+
+	createDOMEventHandlers() {
+		const plugin = this;
+		return EditorView.domEventHandlers({
+			scroll: (event: Event, view: EditorView) => {
+				if (!plugin.settings.flashOnWindowScrolls) return false;
+				const currentScrollPos = view.scrollDOM.scrollTop;
+				const scrollDelta = Math.abs(currentScrollPos - plugin.lastScrollPosition);
+				plugin.lastScrollPosition = currentScrollPos;
+
+				if (plugin.scrollDebounceTimer) {
+					clearTimeout(plugin.scrollDebounceTimer);
+				}
+
+				const debounceTime = scrollDelta < 5 ? 250 : 150;
+				plugin.scrollDebounceTimer = setTimeout(() => {
+					plugin.scheduleCue('scroll', false);
+					plugin.scrollDebounceTimer = null;
+				}, debounceTime);
+				return false;
+			},
+			mousedown: (event: MouseEvent) => {
+				plugin.mouseDownFlag = true;
+				if (plugin.settings.flashOnMouseClick) {
+					plugin.scheduleCue('mouse-click', true);
+				}
+				return false;
+			},
+			mouseup: (event: MouseEvent) => {
+				setTimeout(() => {
+					plugin.mouseDownFlag = false;
+				}, 10);
+				return false;
+			}
+		});
+	}
+
+	private handleKeyRelease() {
+		if (this.isKeyHeld) {
+			if (this.wasJumpKey && this.settings.flashOnCursorJumpKeys) {
+				console.log('DEBUG: Triggering cue for jump key');
+				this.scheduleCue('key-navigation', false);
+			} else if (this.keyPressStartCoords && this.lastCursorCoords && this.settings.flashOnLongSingleMoveRepeats) {
+				const dx = this.lastCursorCoords.x - this.keyPressStartCoords.x;
+				const dy = this.lastCursorCoords.y - this.keyPressStartCoords.y;
+				const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+				console.log('DEBUG: Distance calculated', pixelDistance);
+
+				if (pixelDistance > 200) {
+					console.log('DEBUG: Triggering cue');
+					this.scheduleCue('key-navigation', false);
+				}
+			}
+		}
+
+		this.isKeyHeld = false;
+		this.keyPressStartCoords = null;
+		this.pendingKeyPressStartCapture = false;
+		this.wasJumpKey = false;
+	}
+
+	createUpdateListener() {
+		const plugin = this;
+		return EditorView.updateListener.of((update: ViewUpdate) => {
+			if (!update.view.hasFocus) return;
+
+			const currentPos = update.state.selection.main.head;
+			const coords = update.view.coordsAtPos(currentPos);
+			const currentCoords = coords ? { x: coords.left, y: coords.top } : null;
+
+			if (plugin.pendingKeyPressStartCapture && currentCoords) {
+				console.log('DEBUG: Capturing keyPressStartCoords', currentCoords);
+				plugin.keyPressStartCoords = currentCoords;
+				plugin.pendingKeyPressStartCapture = false;
+			}
+
+			if (plugin.lastCursorPosition !== null && currentCoords && plugin.lastCursorCoords) {
+				const dx = currentCoords.x - plugin.lastCursorCoords.x;
+				const dy = currentCoords.y - plugin.lastCursorCoords.y;
+				const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+
+				if (plugin.settings.flashOnLongSingleMoveRepeats &&
+					pixelDistance > 200 &&
+					!plugin.isKeyHeld &&
+					plugin.settings.flashOnMouseClick &&
+					!plugin.mouseDownFlag) {
+					plugin.scheduleCue('cursor-jump', false);
+				}
+			}
+
+			plugin.lastCursorPosition = currentPos;
+			plugin.lastCursorCoords = currentCoords;
+		});
+	}
+
+	isNavigationKey(event: KeyboardEvent): boolean {
+		const key = event.key;
+		const ctrl = event.ctrlKey;
+		const alt = event.altKey;
+
+		if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) return true;
+		if (['PageUp', 'PageDown', 'Home', 'End'].includes(key)) return true;
+		if (['h', 'j', 'k', 'l', 'w', 'b', 'e', 'g', 'G'].includes(key) && !ctrl && !alt) return true;
+		if (ctrl && ['n', 'p', 'f', 'b', 'a', 'e', 'd', 'k'].includes(key)) return true;
+		if (alt && ['f', 'b'].includes(key)) return true;
+		return false;
+	}
+
+	isJumpNavigationKey(event: KeyboardEvent): boolean {
+		const key = event.key;
+		const ctrl = event.ctrlKey;
+
+		if (['Home', 'End'].includes(key)) return true;
+		if (ctrl && ['Home', 'End', 'a', 'e'].includes(key)) return true;
+		return false;
+	}
+
+	scheduleCue(trigger: string, isMouseClick: boolean) {
+		const now = Date.now();
+		if (isMouseClick && !this.settings.flashOnMouseClick) return;
+		if (this.cueFlashActive || this.pendingCueTrigger) return;
+		if (now - this.lastViewChange < 100) return;
+
+		this.lastViewChange = now;
+		if (this.cueTimeout) {
+			clearTimeout(this.cueTimeout);
+		}
+
+		this.pendingCueTrigger = trigger;
+		this.cueTimeout = setTimeout(() => {
+			this.showCue();
+			this.pendingCueTrigger = null;
+		}, 50);
+	}
+
+	showCue() {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view || !view.editor) return;
+
+		const editorView = (view.editor as any).cm as EditorView;
+		if (!editorView) return;
+
+		if (this.settings.lineHighlightMode === 'left') {
+			this.showLineCue(editorView);
+		} else if (this.settings.lineHighlightMode === 'centered') {
+			this.showCursorCenteredCue(editorView);
+		}
+
+		if (this.settings.blockCursorMode === 'flash') {
+			this.cueFlashActive = true;
+			if (this.resetCueTimeout) {
+				clearTimeout(this.resetCueTimeout);
+			}
+
+			editorView.dispatch({});
+			this.resetCueTimeout = setTimeout(() => {
+				this.cueFlashActive = false;
+				editorView.dispatch({});
+			}, this.settings.lineDuration);
+		}
+	}
+
+	showLineCue(editorView: EditorView) {
+		const cursor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
+		if (!cursor) return;
+
+		const pos = (cursor as any).posToOffset(cursor.getCursor());
+		const coords = editorView.coordsAtPos(pos);
+		if (!coords) return;
+
+		const editorElement = editorView.contentDOM;
+		const editorRect = editorElement.getBoundingClientRect();
+		const lineHeight = editorView.defaultLineHeight;
+		const { color, opacity } = this.getCueColor();
+		const rgb = this.hexToRgb(color);
+
+		const lineHighlight = document.createElement('div');
+		lineHighlight.className = 'obsidian-cue-line';
+		lineHighlight.style.cssText = `
+		position: fixed;
+		left: ${editorRect.left}px;
+		top: ${coords.top}px;
+		width: ${editorRect.width}px;
+		height: ${lineHeight}px;
+		background: linear-gradient(to right,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity}) 0%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) 25%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 50%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
+		);
+		pointer-events: none;
+		z-index: 1;
+		animation: cue-line-fade ${this.settings.lineDuration}ms ease-out;
+		`;
+
+		document.body.appendChild(lineHighlight);
+		setTimeout(() => {
+			lineHighlight.remove();
+		}, this.settings.lineDuration);
+	}
+
+	showCursorCenteredCue(editorView: EditorView) {
+		const cursor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
+		if (!cursor) return;
+
+		const pos = (cursor as any).posToOffset(cursor.getCursor());
+		const coords = editorView.coordsAtPos(pos);
+		if (!coords) return;
+
+		const editorElement = editorView.contentDOM;
+		const editorRect = editorElement.getBoundingClientRect();
+		const lineHeight = editorView.defaultLineHeight;
+		const cursorX = coords.left - editorRect.left;
+		const editorWidth = editorRect.width;
+		const cursorPercent = (cursorX / editorWidth) * 100;
+		const { color, opacity } = this.getCueColor();
+		const rgb = this.hexToRgb(color);
+
+		const lineHighlight = document.createElement('div');
+		lineHighlight.className = 'obsidian-cue-cursor-line';
+		const peakOpacity = opacity;
+		const fadeOpacity = opacity * 0.5;
+		const leftEdge = Math.max(0, cursorPercent - 25);
+		const rightEdge = Math.min(100, cursorPercent + 25);
+
+		lineHighlight.style.cssText = `
+		position: fixed;
+		left: ${editorRect.left}px;
+		top: ${coords.top}px;
+		width: ${editorRect.width}px;
+		height: ${lineHeight}px;
+		background: linear-gradient(to right,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${leftEdge}%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${fadeOpacity}) ${(leftEdge + cursorPercent) / 2}%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${peakOpacity}) ${cursorPercent}%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${fadeOpacity}) ${(cursorPercent + rightEdge) / 2}%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${rightEdge}%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
+		);
+		pointer-events: none;
+		z-index: 1;
+		animation: cue-line-fade ${this.settings.lineDuration}ms ease-out;
+		`;
+
+		document.body.appendChild(lineHighlight);
+		setTimeout(() => {
+			lineHighlight.remove();
+		}, this.settings.lineDuration);
+	}
+
+	getCueColor(): { color: string, opacity: number } {
+		const isDark = document.body.classList.contains('theme-dark');
+		if (this.settings.useThemeColors) {
+			const accentColor = getComputedStyle(document.body)
+				.getPropertyValue('--interactive-accent').trim();
+			return { color: accentColor || '#6496ff', opacity: 0.4 };
+		}
+		const color = isDark ? this.settings.lineColorDark : this.settings.lineColorLight;
+		return { color, opacity: 0.4 };
+	}
+
+	getContrastColor(hexColor: string): string {
+		const rgb = this.hexToRgb(hexColor);
+		const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+		return luminance > 0.5 ? '#000000' : '#ffffff';
+	}
+
+	hexToRgb(hex: string): { r: number, g: number, b: number } {
+		if (hex.startsWith('rgb')) {
+			const matches = hex.match(/\d+/g);
+			if (matches && matches.length >= 3) {
+				return {
+					r: parseInt(matches[0]),
+					g: parseInt(matches[1]),
+					b: parseInt(matches[2])
+				};
+			}
+		}
+		const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+		return result ? {
+			r: parseInt(result[1], 16),
+			g: parseInt(result[2], 16),
+			b: parseInt(result[3], 16)
+		} : { r: 100, g: 150, b: 255 };
+	}
+
+	async loadSettings() {
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	}
+
+	async saveSettings() {
+		await this.saveData(this.settings);
+	}
+
+	onunload() {
+		if (this.cueTimeout) {
+			clearTimeout(this.cueTimeout);
+		}
+		if (this.resetCueTimeout) {
+			clearTimeout(this.resetCueTimeout);
+		}
+		if (this.scrollDebounceTimer) {
+			clearTimeout(this.scrollDebounceTimer);
+		}
+	}
+}
