@@ -183,8 +183,29 @@ export default class CursorCuesPlugin extends Plugin {
 	const plugin = this;
 
 	// ✅ helper must be outside the handlers object
-	const isEditorLink = (el: Element | null) =>
-		!!el && !!el.closest('a, .internal-link, .external-link, [data-href], .cm-hmd-internal-link');
+	const isEditorLink = (el: Element | null): boolean => {
+	if (!el) return false;
+	
+	// Check element itself and all parents up to 5 levels
+	let current: Element | null = el;
+	let depth = 0;
+	while (current && depth < 5) {
+		// Check for link-related classes and attributes
+		if (current.matches('a, [data-href], [href]')) return true;
+		if (current.classList.contains('internal-link')) return true;
+		if (current.classList.contains('external-link')) return true;
+		if (current.classList.contains('cm-link')) return true;
+		if (current.classList.contains('cm-hmd-internal-link')) return true;
+		if (current.classList.contains('cm-url')) return true;
+		
+		// Check if this element or any parent has link-related data attributes
+		if (current.hasAttribute('data-href')) return true;
+		
+		current = current.parentElement;
+		depth++;
+	    }
+		return false;
+	};
 
 	return EditorView.domEventHandlers({
 		scroll: (event: Event, view: EditorView) => {
@@ -208,15 +229,14 @@ export default class CursorCuesPlugin extends Plugin {
 		},
 
 		// ✅ handlers are properties; no const declarations here
-		mousedown: (event: MouseEvent) => {
-		const target = event.target as HTMLElement;
-		if (isEditorLink(target)) return false; // don't interfere with real links
-
-		plugin.mouseDownFlag = true;
-		if (plugin.settings.flashOnMouseClick) {
-			plugin.scheduleCue('mouse-click', true);
-		}
-		return false; // let CM/Obsidian continue processing
+		mousedown(event: MouseEvent) {
+			const target = event.target as HTMLElement;
+			if (isEditorLink(target)) {
+				return true; // Return true to let event propagate normally
+			}
+			plugin.mouseDownFlag = true;
+			// Remove the mouse-click cue scheduling entirely - it interferes
+			return false;
 		},
 
 		mouseup: (event: MouseEvent) => {
