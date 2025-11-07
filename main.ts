@@ -7,18 +7,20 @@ class EndOfLineWidget extends WidgetType {
 	constructor(private markerColor: string, private contrastColor: string) {
 		super();
 	}
-
 	toDOM() {
 		const span = document.createElement('span');
 		span.textContent = ' ';
 		span.style.cssText = `
-		background-color: ${this.markerColor};
-		color: ${this.contrastColor};
-		display: inline-block;
-		width: 0.5em;
+			background-color: ${this.markerColor};
+			color: ${this.contrastColor};
+			display: inline-block;
+			width: 0.5em;
+			pointer-events: none;           /* ← add this */
 		`;
+		span.setAttribute('aria-hidden', 'true'); /* optional */
 		return span;
 	}
+	
 }
 
 export default class CursorCuesPlugin extends Plugin {
@@ -39,6 +41,8 @@ export default class CursorCuesPlugin extends Plugin {
 	private isKeyHeld: boolean = false;
 	private cueFlashActive: boolean = false;
 	private decorationView: EditorView | null = null;
+	private ambientMuteUntil: number = 0;
+	private clickFenceActive: boolean = false;
 	private pendingCueTrigger: string | null = null;
 
 	async onload() {
@@ -55,7 +59,7 @@ export default class CursorCuesPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
 				if (this.settings.flashOnWindowChanges) {
-					this.scheduleCue('view-change', false);
+					requestAnimationFrame(() => requestAnimationFrame(() => this.scheduleCue('view-change', false)));
 				}
 			})
 		);
@@ -63,7 +67,7 @@ export default class CursorCuesPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('layout-change', () => {
 				if (this.settings.flashOnWindowChanges) {
-					this.scheduleCue('layout-change', false);
+					requestAnimationFrame(() => requestAnimationFrame(() => this.scheduleCue('layout-change', false)));
 				}
 			})
 		);
@@ -75,6 +79,9 @@ export default class CursorCuesPlugin extends Plugin {
 		);
 
 		window.addEventListener('keydown', (event: KeyboardEvent) => {
+			if (this.isLinkNavigationKey(event)) {
+				return;
+			}
 			const isMovementKey = this.isNavigationKey(event);
 			const isJumpKey = this.isJumpNavigationKey(event);
 
@@ -84,14 +91,25 @@ export default class CursorCuesPlugin extends Plugin {
 				this.pendingKeyPressStartCapture = true;
 				this.wasJumpKey = isJumpKey;
 			}
-		}, true);
+		}, false);
 
 		window.addEventListener('keyup', (event: KeyboardEvent) => {
 			if (this.isNavigationKey(event) && this.isKeyHeld) {
 				console.log('DEBUG: keyup -', event.key);
 				this.handleKeyRelease();
 			}
-		}, true);
+		}, false)
+		// Global click fence (max-compat): block cue work during pointer->click and a short tail; also mute ambient cues
+		const startFence = () => { this.clickFenceActive = true; };
+		const endFenceSoon = () => { setTimeout(() => { this.clickFenceActive = false; }, 400); }; // 400ms tail
+		window.addEventListener('pointerdown', startFence, { capture: true });
+		window.addEventListener('pointerup', endFenceSoon, { capture: true });
+		window.addEventListener('pointercancel', endFenceSoon, { capture: true });
+		window.addEventListener('click', () => { 
+			endFenceSoon(); 
+			this.ambientMuteUntil = Date.now() + 500; // mute ambient cues for 500ms after any click
+		}, { capture: true });
+;
 	}
 
 	createCueDecorationPlugin() {
@@ -143,10 +161,12 @@ export default class CursorCuesPlugin extends Plugin {
 						});
 						builder.add(pos, pos, widget);
 					} else {
+
 						const decoration = Decoration.mark({
 							attributes: {
-								style: `background-color: ${markerColor}; color: ${contrastColor};`
-							}
+								class: 'cursor-cues-block-mark',
+								style: `background-color:${markerColor}; color:${contrastColor}; pointer-events: none;`
+								}
 						});
 						builder.add(pos, pos + 1, decoration);
 					}
@@ -160,40 +180,57 @@ export default class CursorCuesPlugin extends Plugin {
 	}
 
 	createDOMEventHandlers() {
-		const plugin = this;
-		return EditorView.domEventHandlers({
-			scroll: (event: Event, view: EditorView) => {
-				if (!plugin.settings.flashOnWindowScrolls) return false;
-				const currentScrollPos = view.scrollDOM.scrollTop;
-				const scrollDelta = Math.abs(currentScrollPos - plugin.lastScrollPosition);
-				plugin.lastScrollPosition = currentScrollPos;
+	const plugin = this;
 
-				if (plugin.scrollDebounceTimer) {
-					clearTimeout(plugin.scrollDebounceTimer);
-				}
+	// ✅ helper must be outside the handlers object
+	const isEditorLink = (el: Element | null) =>
+		!!el && !!el.closest('a, .internal-link, .external-link, [data-href], .cm-hmd-internal-link');
 
-				const debounceTime = scrollDelta < 5 ? 250 : 150;
-				plugin.scrollDebounceTimer = setTimeout(() => {
-					plugin.scheduleCue('scroll', false);
-					plugin.scrollDebounceTimer = null;
-				}, debounceTime);
-				return false;
-			},
-			mousedown: (event: MouseEvent) => {
-				plugin.mouseDownFlag = true;
-				if (plugin.settings.flashOnMouseClick) {
-					plugin.scheduleCue('mouse-click', true);
-				}
-				return false;
-			},
-			mouseup: (event: MouseEvent) => {
-				setTimeout(() => {
-					plugin.mouseDownFlag = false;
-				}, 10);
-				return false;
-			}
-		});
+	return EditorView.domEventHandlers({
+		scroll: (event: Event, view: EditorView) => {
+		if (!plugin.settings.flashOnWindowScrolls) return false;
+
+		const currentScrollPos = view.scrollDOM.scrollTop;
+		const scrollDelta = Math.abs(currentScrollPos - plugin.lastScrollPosition);
+		plugin.lastScrollPosition = currentScrollPos;
+
+		if (plugin.scrollDebounceTimer) {
+			clearTimeout(plugin.scrollDebounceTimer);
+		}
+
+		const debounceTime = scrollDelta < 5 ? 250 : 150;
+		plugin.scrollDebounceTimer = setTimeout(() => {
+			plugin.scheduleCue('scroll', false);
+			plugin.scrollDebounceTimer = null;
+		}, debounceTime);
+
+		return false;
+		},
+
+		// ✅ handlers are properties; no const declarations here
+		mousedown: (event: MouseEvent) => {
+		const target = event.target as HTMLElement;
+		if (isEditorLink(target)) return false; // don't interfere with real links
+
+		plugin.mouseDownFlag = true;
+		if (plugin.settings.flashOnMouseClick) {
+			plugin.scheduleCue('mouse-click', true);
+		}
+		return false; // let CM/Obsidian continue processing
+		},
+
+		mouseup: (event: MouseEvent) => {
+		const target = event.target as HTMLElement;
+		if (isEditorLink(target)) return false; // don't interfere with real links
+
+		setTimeout(() => {
+			plugin.mouseDownFlag = false;
+		}, 10);
+		return false;
+		},
+	});
 	}
+
 
 	private handleKeyRelease() {
 		if (this.isKeyHeld) {
@@ -275,8 +312,21 @@ export default class CursorCuesPlugin extends Plugin {
 		return false;
 	}
 
-	scheduleCue(trigger: string, isMouseClick: boolean) {
+	private isLinkNavigationKey(event: KeyboardEvent): boolean {
+            const key = event.key;
+            const ctrl = event.ctrlKey;
+            const meta = event.metaKey;
+            const alt = event.altKey;
+            if (key === 'Enter' && (ctrl || meta || alt)) return true;
+            if ((ctrl || meta) && key === 'o') return true;
+            return false;
+        }
+    
+    scheduleCue(trigger: string, isMouseClick: boolean) {
+		if (isMouseClick) return; // remove mouse-click cues entirely
+		if (this.clickFenceActive) return;
 		const now = Date.now();
+		if ((trigger === 'view-change' || trigger === 'layout-change' || trigger === 'css-change') && now < this.ambientMuteUntil) return;
 		if (isMouseClick && !this.settings.flashOnMouseClick) return;
 		if (this.cueFlashActive || this.pendingCueTrigger) return;
 		if (now - this.lastViewChange < 100) return;
@@ -312,10 +362,10 @@ export default class CursorCuesPlugin extends Plugin {
 				clearTimeout(this.resetCueTimeout);
 			}
 
-			editorView.dispatch({});
+			if (!this.clickFenceActive) { editorView.dispatch({}); }
 			this.resetCueTimeout = setTimeout(() => {
 				this.cueFlashActive = false;
-				editorView.dispatch({});
+				if (!this.clickFenceActive) { editorView.dispatch({}); }
 			}, this.settings.lineDuration);
 		}
 	}
