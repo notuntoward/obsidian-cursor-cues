@@ -5,14 +5,11 @@ import CursorCuesPlugin from './main';
 export interface CursorCuesPluginSettings {
 	blockCursorMode: 'always' | 'flash' | 'off';
 	lineHighlightMode: 'left' | 'centered' | 'off';
-	lineColorLight: string;
-	lineColorDark: string;
+	cursorColorLight: string;
+	cursorColorDark: string;
 	lineDuration: number;
-	cursorDuration: number;
-	blockColorLight: string;
-	blockColorDark: string;
-	markerWidthMultiplier: number;
-	useThemeColors: boolean;
+        cursorDuration: number;
+        useThemeColors: boolean;
 	flashOnWindowScrolls: boolean;
 	flashOnWindowChanges: boolean;
 	flashOnLongSingleMoveRepeats: boolean;
@@ -23,14 +20,11 @@ export interface CursorCuesPluginSettings {
 export const DEFAULT_SETTINGS: CursorCuesPluginSettings = {
 	blockCursorMode: 'always',
 	lineHighlightMode: 'centered',
-	lineColorLight: '#6496ff',
-	lineColorDark: '#6496ff',
-	lineDuration: 800,
-	cursorDuration: 800,
-	blockColorLight: '#6496ff',
-	blockColorDark: '#6496ff',
-	markerWidthMultiplier: 1.0,
-	useThemeColors: true,
+	cursorColorLight: '#6496ff',
+	cursorColorDark: '#6496ff',
+        lineDuration: 800,
+        cursorDuration: 800,
+        useThemeColors: true,
 	flashOnWindowScrolls: true,
 	flashOnWindowChanges: true,
 	flashOnLongSingleMoveRepeats: true,
@@ -54,7 +48,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Block cursor')
-			.setDesc('Show character marker: always visible, only during cue flash, or off')
+			.setDesc('Show block around character at cursor: always visible, only during cue flash, or off')
 			.addDropdown(dropdown => dropdown
 				.addOption('always', 'Always on')
 				.addOption('flash', 'Only during cue flash')
@@ -95,60 +89,30 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 			containerEl.createEl('h3', {text: 'Color Settings'});
 
 			if (this.plugin.settings.lineHighlightMode !== 'off') {
-				containerEl.createEl('h4', {text: 'Line Highlight Colors'});
+				containerEl.createEl('h4', {text: 'Cursor Highlight Colors'});
 
 				new Setting(containerEl)
-					.setName('Light theme line color')
-					.setDesc('Line highlight color for light theme (hex code, default: #6496ff)')
+					.setName('Light theme cursor color')
+					.setDesc('Cursor highlight color for light theme (hex code, default: #6496ff)')
 					.addText(text => text
 						.setPlaceholder('#6496ff')
-						.setValue(this.plugin.settings.lineColorLight)
+						.setValue(this.plugin.settings.cursorColorLight)
 						.onChange(async (value) => {
 							if (/^#[0-9A-F]{6}$/i.test(value)) {
-								this.plugin.settings.lineColorLight = value;
+								this.plugin.settings.cursorColorLight = value;
 								await this.plugin.saveSettings();
 							}
 						}));
 
 				new Setting(containerEl)
-					.setName('Dark theme line color')
-					.setDesc('Line highlight color for dark theme (hex code, default: #6496ff)')
+					.setName('Dark theme cursor color')
+					.setDesc('Cursor highlight color for dark theme (hex code, default: #6496ff)')
 					.addText(text => text
 						.setPlaceholder('#6496ff')
-						.setValue(this.plugin.settings.lineColorDark)
+						.setValue(this.plugin.settings.cursorColorDark)
 						.onChange(async (value) => {
 							if (/^#[0-9A-F]{6}$/i.test(value)) {
-								this.plugin.settings.lineColorDark = value;
-								await this.plugin.saveSettings();
-							}
-						}));
-			}
-
-			if (this.plugin.settings.blockCursorMode !== 'off') {
-				containerEl.createEl('h4', {text: 'Block Cursor Colors'});
-
-				new Setting(containerEl)
-					.setName('Light theme block color')
-					.setDesc('Block cursor background for light theme (hex code)')
-					.addText(text => text
-						.setPlaceholder('#6496ff')
-						.setValue(this.plugin.settings.blockColorLight)
-						.onChange(async (value) => {
-							if (/^#[0-9A-F]{6}$/i.test(value)) {
-								this.plugin.settings.blockColorLight = value;
-								await this.plugin.saveSettings();
-							}
-						}));
-
-				new Setting(containerEl)
-					.setName('Dark theme block color')
-					.setDesc('Block cursor background for dark theme (hex code)')
-					.addText(text => text
-						.setPlaceholder('#6496ff')
-						.setValue(this.plugin.settings.blockColorDark)
-						.onChange(async (value) => {
-							if (/^#[0-9A-F]{6}$/i.test(value)) {
-								this.plugin.settings.blockColorDark = value;
+								this.plugin.settings.cursorColorDark = value;
 								await this.plugin.saveSettings();
 							}
 						}));

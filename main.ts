@@ -4,14 +4,14 @@ import { RangeSetBuilder } from '@codemirror/state';
 import { CursorCuesPluginSettings, DEFAULT_SETTINGS, CursorCuesSettingTab } from './settings';
 
 class EndOfLineWidget extends WidgetType {
-	constructor(private blockColor: string, private contrastColor: string) {
+	constructor(private markerColor: string, private contrastColor: string) {
 		super();
 	}
 	toDOM() {
 		const span = document.createElement('span');
 		span.textContent = ' ';
 		span.style.cssText = `
-			background-color: ${this.blockColor};
+			background-color: ${this.markerColor};
 			color: ${this.contrastColor};
 			display: inline-block;
 			width: 0.5em;
@@ -142,14 +142,14 @@ export default class CursorCuesPlugin extends Plugin {
 				}
 
 				const pos = view.state.selection.main.head;
-				const blockColor = plugin.getCueColor().color;
-				const contrastColor = plugin.getContrastColor(blockColor);
-				plugin.updateCursorStyles(blockColor, contrastColor);
+				const markerColor = plugin.getCueColor().color;
+				const contrastColor = plugin.getContrastColor(markerColor);
+				plugin.updateCursorStyles(markerColor, contrastColor);
 
 				if (pos >= view.state.doc.length) {
 					if (view.state.doc.length > 0) {
 						const widget = Decoration.widget({
-							widget: new EndOfLineWidget(blockColor, contrastColor),
+							widget: new EndOfLineWidget(markerColor, contrastColor),
 							side: 1
 						});
 						builder.add(view.state.doc.length, view.state.doc.length, widget);
@@ -158,7 +158,7 @@ export default class CursorCuesPlugin extends Plugin {
 					const char = view.state.doc.sliceString(pos, pos + 1);
 					if (char === '\n' || char === '') {
 						const widget = Decoration.widget({
-							widget: new EndOfLineWidget(blockColor, contrastColor),
+							widget: new EndOfLineWidget(markerColor, contrastColor),
 							side: 1
 						});
 						builder.add(pos, pos, widget);
@@ -404,6 +404,10 @@ export default class CursorCuesPlugin extends Plugin {
 		const lineHeight = editorView.defaultLineHeight;
 		const { color, opacity } = this.getCueColor();
 		const rgb = this.hexToRgb(color);
+		// Calculate 20em in pixels (approximate font size)
+		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
+		const fadeDistance = 20 * fontSize; // 20em in pixels
+		const fadePercent = Math.min(100, (fadeDistance / editorRect.width) * 100);
 
 		const lineHighlight = document.createElement('div');
 		lineHighlight.className = 'obsidian-cue-line';
@@ -415,8 +419,8 @@ export default class CursorCuesPlugin extends Plugin {
 		height: ${lineHeight}px;
 		background: linear-gradient(to right,
 			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity}) 0%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) 25%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 50%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) ${fadePercent * 0.5}%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${fadePercent}%,
 			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
 		);
 		pointer-events: none;
@@ -450,9 +454,13 @@ export default class CursorCuesPlugin extends Plugin {
 		const lineHighlight = document.createElement('div');
 		lineHighlight.className = 'obsidian-cue-cursor-line';
 		const peakOpacity = opacity;
-		const fadeOpacity = opacity * 0.5;
-		const leftEdge = Math.max(0, cursorPercent - 25);
-		const rightEdge = Math.min(100, cursorPercent + 25);
+		const fadeOpacity = opacity * 0.75;
+		// Calculate 13.3em spread on each side (26.6em total)
+		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
+		const spreadDistance = 13.3 * fontSize; // 13.3em in pixels
+		const spreadPercent = (spreadDistance / editorRect.width) * 100;
+		const leftEdge = Math.max(0, cursorPercent - spreadPercent);
+		const rightEdge = Math.min(100, cursorPercent + spreadPercent);
 
 		lineHighlight.style.cssText = `
 		position: fixed;
@@ -483,12 +491,20 @@ export default class CursorCuesPlugin extends Plugin {
 	getCueColor(): { color: string, opacity: number } {
 		const isDark = document.body.classList.contains('theme-dark');
 		if (this.settings.useThemeColors) {
-			const accentColor = getComputedStyle(document.body)
+			let accentColor = getComputedStyle(document.body)
 				.getPropertyValue('--interactive-accent').trim();
-			return { color: accentColor || '#6496ff', opacity: 0.4 };
+
+			// For light theme, use color-mix to create a much lighter version
+			if (!isDark && accentColor) {
+				// Mix 25% of accent color with 75% white to create a very light tint
+				accentColor = `color-mix(in srgb, ${accentColor} 25%, white)`;
+				console.log(`Light theme: Using lightened accent color: ${accentColor}`);
+			}
+
+			return { color: accentColor || '#6496ff', opacity: 0.8 };
 		}
-		const color = isDark ? this.settings.lineColorDark : this.settings.lineColorLight;
-		return { color, opacity: 0.4 };
+		const color = isDark ? this.settings.cursorColorDark : this.settings.cursorColorLight;
+		return { color, opacity: 0.8 };
 	}
 
 	getRelativeLuminance(r: number, g: number, b: number): number {
@@ -523,8 +539,8 @@ export default class CursorCuesPlugin extends Plugin {
 		return whiteContrast > blackContrast ? '#ffffff' : '#000000';
 	}
 
-	private updateCursorStyles(blockColor: string, contrastColor: string): void {
-		console.log(`updateCursorStyles called: bg=${blockColor}, fg=${contrastColor}`);
+	private updateCursorStyles(markerColor: string, contrastColor: string): void {
+		console.log(`updateCursorStyles called: bg=${markerColor}, fg=${contrastColor}`);
 		if (this.styleElement) {
 			this.styleElement.remove();
 		}
@@ -533,7 +549,7 @@ export default class CursorCuesPlugin extends Plugin {
 		this.styleElement.id = 'cursor-cues-dynamic-styles';
 		this.styleElement.textContent = `
 			.cursor-cues-block-mark {
-				background-color: ${blockColor} !important;
+				background-color: ${markerColor} !important;
 				color: ${contrastColor} !important;
 			}
 		`;
