@@ -19,9 +19,11 @@
 /* Make block cursor overlay click-through too */
 .cursor-cues-block-mark {
   pointer-events: none;
-
   contain: paint;
   will-change: opacity, transform;
+  /* Use CSS custom properties for dynamic colors */
+  background-color: var(--cursor-bg) !important;
+  color: var(--cursor-fg) !important;
 }
 
 @keyframes cue-char-fade {

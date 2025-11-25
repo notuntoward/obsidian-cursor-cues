@@ -9,8 +9,8 @@ export interface CursorCuesPluginSettings {
 	lineColorDark: string;
 	lineDuration: number;
 	cursorDuration: number;
-	markerColorLight: string;
-	markerColorDark: string;
+	blockColorLight: string;
+	blockColorDark: string;
 	markerWidthMultiplier: number;
 	useThemeColors: boolean;
 	flashOnWindowScrolls: boolean;
@@ -21,14 +21,14 @@ export interface CursorCuesPluginSettings {
 }
 
 export const DEFAULT_SETTINGS: CursorCuesPluginSettings = {
-	blockCursorMode: 'flash',
+	blockCursorMode: 'always',
 	lineHighlightMode: 'centered',
 	lineColorLight: '#6496ff',
 	lineColorDark: '#6496ff',
 	lineDuration: 800,
 	cursorDuration: 800,
-	markerColorLight: '#6496ff',
-	markerColorDark: '#6496ff',
+	blockColorLight: '#6496ff',
+	blockColorDark: '#6496ff',
 	markerWidthMultiplier: 1.0,
 	useThemeColors: true,
 	flashOnWindowScrolls: true,
@@ -125,30 +125,30 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 			}
 
 			if (this.plugin.settings.blockCursorMode !== 'off') {
-				containerEl.createEl('h4', {text: 'Character Marker Colors'});
+				containerEl.createEl('h4', {text: 'Block Cursor Colors'});
 
 				new Setting(containerEl)
-					.setName('Light theme marker color')
-					.setDesc('Character marker background for light theme (hex code)')
+					.setName('Light theme block color')
+					.setDesc('Block cursor background for light theme (hex code)')
 					.addText(text => text
 						.setPlaceholder('#6496ff')
-						.setValue(this.plugin.settings.markerColorLight)
+						.setValue(this.plugin.settings.blockColorLight)
 						.onChange(async (value) => {
 							if (/^#[0-9A-F]{6}$/i.test(value)) {
-								this.plugin.settings.markerColorLight = value;
+								this.plugin.settings.blockColorLight = value;
 								await this.plugin.saveSettings();
 							}
 						}));
 
 				new Setting(containerEl)
-					.setName('Dark theme marker color')
-					.setDesc('Character marker background for dark theme (hex code)')
+					.setName('Dark theme block color')
+					.setDesc('Block cursor background for dark theme (hex code)')
 					.addText(text => text
 						.setPlaceholder('#6496ff')
-						.setValue(this.plugin.settings.markerColorDark)
+						.setValue(this.plugin.settings.blockColorDark)
 						.onChange(async (value) => {
 							if (/^#[0-9A-F]{6}$/i.test(value)) {
-								this.plugin.settings.markerColorDark = value;
+								this.plugin.settings.blockColorDark = value;
 								await this.plugin.saveSettings();
 							}
 						}));

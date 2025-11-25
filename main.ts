@@ -4,14 +4,14 @@ import { RangeSetBuilder } from '@codemirror/state';
 import { CursorCuesPluginSettings, DEFAULT_SETTINGS, CursorCuesSettingTab } from './settings';
 
 class EndOfLineWidget extends WidgetType {
-	constructor(private markerColor: string, private contrastColor: string) {
+	constructor(private blockColor: string, private contrastColor: string) {
 		super();
 	}
 	toDOM() {
 		const span = document.createElement('span');
 		span.textContent = ' ';
 		span.style.cssText = `
-			background-color: ${this.markerColor};
+			background-color: ${this.blockColor};
 			color: ${this.contrastColor};
 			display: inline-block;
 			width: 0.5em;
@@ -25,6 +25,7 @@ class EndOfLineWidget extends WidgetType {
 
 export default class CursorCuesPlugin extends Plugin {
 	settings: CursorCuesPluginSettings;
+	private styleElement: HTMLStyleElement | null = null;
 
 	private lastCursorPosition: number | null = null;
 	private lastCursorCoords: { x: number, y: number } | null = null;
@@ -141,13 +142,14 @@ export default class CursorCuesPlugin extends Plugin {
 				}
 
 				const pos = view.state.selection.main.head;
-				const markerColor = plugin.getCueColor().color;
-				const contrastColor = plugin.getContrastColor(markerColor);
+				const blockColor = plugin.getCueColor().color;
+				const contrastColor = plugin.getContrastColor(blockColor);
+				plugin.updateCursorStyles(blockColor, contrastColor);
 
 				if (pos >= view.state.doc.length) {
 					if (view.state.doc.length > 0) {
 						const widget = Decoration.widget({
-							widget: new EndOfLineWidget(markerColor, contrastColor),
+							widget: new EndOfLineWidget(blockColor, contrastColor),
 							side: 1
 						});
 						builder.add(view.state.doc.length, view.state.doc.length, widget);
@@ -156,7 +158,7 @@ export default class CursorCuesPlugin extends Plugin {
 					const char = view.state.doc.sliceString(pos, pos + 1);
 					if (char === '\n' || char === '') {
 						const widget = Decoration.widget({
-							widget: new EndOfLineWidget(markerColor, contrastColor),
+							widget: new EndOfLineWidget(blockColor, contrastColor),
 							side: 1
 						});
 						builder.add(pos, pos, widget);
@@ -165,7 +167,6 @@ export default class CursorCuesPlugin extends Plugin {
 						const decoration = Decoration.mark({
 							attributes: {
 								class: 'cursor-cues-block-mark',
-								style: `background-color:${markerColor}; color:${contrastColor}; pointer-events: none;`
 								}
 						});
 						builder.add(pos, pos + 1, decoration);
@@ -490,10 +491,54 @@ export default class CursorCuesPlugin extends Plugin {
 		return { color, opacity: 0.4 };
 	}
 
+	getRelativeLuminance(r: number, g: number, b: number): number {
+		const rsRGB = r / 255;
+		const gsRGB = g / 255;
+		const bsRGB = b / 255;
+
+		const rLinear = rsRGB <= 0.03928 ? rsRGB / 12.92 : Math.pow((rsRGB + 0.055) / 1.055, 2.4);
+		const gLinear = gsRGB <= 0.03928 ? gsRGB / 12.92 : Math.pow((gsRGB + 0.055) / 1.055, 2.4);
+		const bLinear = bsRGB <= 0.03928 ? bsRGB / 12.92 : Math.pow((bsRGB + 0.055) / 1.055, 2.4);
+
+		return 0.2126 * rLinear + 0.7152 * gLinear + 0.0722 * bLinear;
+	}
+
+	getContrastRatio(color1: string, color2: string): number {
+		const rgb1 = this.hexToRgb(color1);
+		const rgb2 = this.hexToRgb(color2);
+
+		const L1 = this.getRelativeLuminance(rgb1.r, rgb1.g, rgb1.b);
+		const L2 = this.getRelativeLuminance(rgb2.r, rgb2.g, rgb2.b);
+
+		const lighter = Math.max(L1, L2);
+		const darker = Math.min(L1, L2);
+
+		return (lighter + 0.05) / (darker + 0.05);
+	}
+
 	getContrastColor(hexColor: string): string {
-		const rgb = this.hexToRgb(hexColor);
-		const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
-		return luminance > 0.5 ? '#000000' : '#ffffff';
+		const whiteContrast = this.getContrastRatio(hexColor, '#ffffff');
+		const blackContrast = this.getContrastRatio(hexColor, '#000000');
+		console.log(`Cursor color ${hexColor}: white=${whiteContrast.toFixed(2)}, black=${blackContrast.toFixed(2)}, choosing ${whiteContrast > blackContrast ? 'WHITE' : 'BLACK'}`);
+		return whiteContrast > blackContrast ? '#ffffff' : '#000000';
+	}
+
+	private updateCursorStyles(blockColor: string, contrastColor: string): void {
+		console.log(`updateCursorStyles called: bg=${blockColor}, fg=${contrastColor}`);
+		if (this.styleElement) {
+			this.styleElement.remove();
+		}
+		
+		this.styleElement = document.createElement('style');
+		this.styleElement.id = 'cursor-cues-dynamic-styles';
+		this.styleElement.textContent = `
+			.cursor-cues-block-mark {
+				background-color: ${blockColor} !important;
+				color: ${contrastColor} !important;
+			}
+		`;
+		document.head.appendChild(this.styleElement);
+		console.log(`Dynamic CSS injected for cursor`);
 	}
 
 	hexToRgb(hex: string): { r: number, g: number, b: number } {
@@ -525,6 +570,9 @@ export default class CursorCuesPlugin extends Plugin {
 
 	onunload() {
 		if (this.cueTimeout) {
+			if (this.styleElement) {
+				this.styleElement.remove();
+			}
 			clearTimeout(this.cueTimeout);
 		}
 		if (this.resetCueTimeout) {
