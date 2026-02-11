@@ -172,7 +172,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Flash after cursor jump keys')
-			.setDesc('Show cue after pressing: Home, End, Ctrl+Home, Ctrl+End, Ctrl+A, Ctrl+E')
+			.setDesc('Show cue after jumping to line start/end or note start/end, e.g. with Home/End or Ctrl+Home/End')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.flashOnCursorJumpKeys)
 				.onChange(async (value) => {

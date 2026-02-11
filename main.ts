@@ -45,6 +45,7 @@ export default class CursorCuesPlugin extends Plugin {
 	private ambientMuteUntil: number = 0;
 	private clickFenceActive: boolean = false;
 	private pendingCueTrigger: string | null = null;
+	private scrollCueSuppressedUntil: number = 0;
 
 	async onload() {
 		await this.loadSettings();
@@ -59,6 +60,10 @@ export default class CursorCuesPlugin extends Plugin {
 
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
+				// Reset cursor tracking so the first update in the new view
+				// doesn't compare against the old document's position.
+				this.lastCursorPosition = null;
+				this.lastCursorCoords = null;
 				if (this.settings.flashOnWindowChanges) {
 					requestAnimationFrame(() => requestAnimationFrame(() => this.scheduleCue('view-change', false)));
 				}
@@ -95,9 +100,15 @@ export default class CursorCuesPlugin extends Plugin {
 		}, false);
 
 		window.addEventListener('keyup', (event: KeyboardEvent) => {
-			if (this.isNavigationKey(event) && this.isKeyHeld) {
-				console.log('DEBUG: keyup -', event.key);
-				this.handleKeyRelease();
+			if (this.isKeyHeld) {
+				// Also trigger on modifier release (Ctrl/Meta/Alt) to handle
+				// cases where the modifier is released before the letter key
+				// (e.g. Ctrl released before 'a' in a Ctrl+Home combo).
+				const isModifier = ['Control', 'Meta', 'Alt'].includes(event.key);
+				if (this.isNavigationKey(event) || isModifier) {
+					console.log('DEBUG: keyup -', event.key);
+					this.handleKeyRelease();
+				}
 			}
 		}, false)
 		// Global click fence (max-compat): block cue work during pointer->click and a short tail; also mute ambient cues
@@ -216,6 +227,19 @@ export default class CursorCuesPlugin extends Plugin {
 		const scrollDelta = Math.abs(currentScrollPos - plugin.lastScrollPosition);
 		plugin.lastScrollPosition = currentScrollPos;
 
+		// While a cue is active (or was recently shown), keep extending the
+		// suppression window and cancel any pending debounce.  This prevents
+		// momentum / inertial scrolling from triggering a second flash.
+		const now = Date.now();
+		if (plugin.cueFlashActive || now < plugin.scrollCueSuppressedUntil) {
+			plugin.scrollCueSuppressedUntil = now + 300;
+			if (plugin.scrollDebounceTimer) {
+				clearTimeout(plugin.scrollDebounceTimer);
+				plugin.scrollDebounceTimer = null;
+			}
+			return false;
+		}
+
 		if (plugin.scrollDebounceTimer) {
 			clearTimeout(plugin.scrollDebounceTimer);
 		}
@@ -304,6 +328,29 @@ export default class CursorCuesPlugin extends Plugin {
 					!plugin.mouseDownFlag) {
 					plugin.scheduleCue('cursor-jump', false);
 				}
+
+				// Position-based line/note start/end jump detection.
+				// Catches any command (emacs Ctrl+A/E, vim gg/G, plugins, etc.)
+				// that moves the cursor to a boundary, regardless of keybinding.
+				if (plugin.settings.flashOnCursorJumpKeys &&
+					!update.docChanged &&
+					!plugin.isKeyHeld &&
+					!plugin.mouseDownFlag &&
+					currentPos !== plugin.lastCursorPosition &&
+					update.state.selection.main.empty) {
+
+					const line = update.state.doc.lineAt(currentPos);
+					const atLineStart = currentPos === line.from;
+					const atLineEnd = currentPos === line.to;
+					const atNoteStart = currentPos === 0;
+					const atNoteEnd = currentPos >= update.state.doc.length;
+
+					if ((atNoteStart || atNoteEnd) && pixelDistance > 50) {
+						plugin.scheduleCue('position-jump', false);
+					} else if ((atLineStart || atLineEnd) && line.length > 5 && pixelDistance > 80) {
+						plugin.scheduleCue('position-jump', false);
+					}
+				}
 			}
 
 			plugin.lastCursorPosition = currentPos;
@@ -319,7 +366,7 @@ export default class CursorCuesPlugin extends Plugin {
 		if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) return true;
 		if (['PageUp', 'PageDown', 'Home', 'End'].includes(key)) return true;
 		if (['h', 'j', 'k', 'l', 'w', 'b', 'e', 'g', 'G'].includes(key) && !ctrl && !alt) return true;
-		if (ctrl && ['n', 'p', 'f', 'b', 'a', 'e', 'd', 'k'].includes(key)) return true;
+		if (ctrl && ['n', 'p', 'f', 'b', 'd', 'k'].includes(key)) return true;
 		if (alt && ['f', 'b'].includes(key)) return true;
 		return false;
 	}
@@ -329,7 +376,7 @@ export default class CursorCuesPlugin extends Plugin {
 		const ctrl = event.ctrlKey;
 
 		if (['Home', 'End'].includes(key)) return true;
-		if (ctrl && ['Home', 'End', 'a', 'e'].includes(key)) return true;
+		if (ctrl && ['Home', 'End'].includes(key)) return true;
 		return false;
 	}
 
@@ -344,13 +391,16 @@ export default class CursorCuesPlugin extends Plugin {
         }
     
     scheduleCue(trigger: string, isMouseClick: boolean) {
-		if (isMouseClick) return; // remove mouse-click cues entirely
-		if (this.clickFenceActive) return;
-		const now = Date.now();
-		if ((trigger === 'view-change' || trigger === 'layout-change' || trigger === 'css-change') && now < this.ambientMuteUntil) return;
-		if (isMouseClick && !this.settings.flashOnMouseClick) return;
-		if (this.cueFlashActive || this.pendingCueTrigger) return;
-		if (now - this.lastViewChange < 100) return;
+  if (isMouseClick) return; // remove mouse-click cues entirely
+  const isViewTrigger = trigger === 'view-change' || trigger === 'layout-change';
+  // View/layout triggers bypass click fence & ambient mute because
+  // switching notes inherently involves a click.
+  if (!isViewTrigger && this.clickFenceActive) return;
+  const now = Date.now();
+  if (trigger === 'css-change' && now < this.ambientMuteUntil) return;
+  if (isMouseClick && !this.settings.flashOnMouseClick) return;
+  if (this.cueFlashActive || this.pendingCueTrigger) return;
+  if (now - this.lastViewChange < 100) return;
 
 		this.lastViewChange = now;
 		if (this.cueTimeout) {
@@ -371,24 +421,38 @@ export default class CursorCuesPlugin extends Plugin {
 		const editorView = (view.editor as any).cm as EditorView;
 		if (!editorView) return;
 
+		// Cancel any pending scroll debounce so it can't fire after this cue
+		if (this.scrollDebounceTimer) {
+			clearTimeout(this.scrollDebounceTimer);
+			this.scrollDebounceTimer = null;
+		}
+
 		if (this.settings.lineHighlightMode === 'left') {
 			this.showLineCue(editorView);
 		} else if (this.settings.lineHighlightMode === 'centered') {
 			this.showCursorCenteredCue(editorView);
 		}
 
-		if (this.settings.blockCursorMode === 'flash') {
-			this.cueFlashActive = true;
-			if (this.resetCueTimeout) {
-				clearTimeout(this.resetCueTimeout);
-			}
-
-			if (!this.clickFenceActive) { editorView.dispatch({}); }
-			this.resetCueTimeout = setTimeout(() => {
-				this.cueFlashActive = false;
-				if (!this.clickFenceActive) { editorView.dispatch({}); }
-			}, this.settings.lineDuration);
+		// Always set cueFlashActive as a cooldown guard to prevent
+		// double-triggering (e.g. scroll → showCue → layout shift → scroll)
+		this.cueFlashActive = true;
+		if (this.resetCueTimeout) {
+			clearTimeout(this.resetCueTimeout);
 		}
+
+		// Only dispatch when blockCursorMode is 'flash' (to toggle the decoration).
+		// Allow dispatch during click fence for view-change/layout-change triggers.
+		const isViewCueTrigger = this.pendingCueTrigger === 'view-change' || this.pendingCueTrigger === 'layout-change';
+		if (this.settings.blockCursorMode === 'flash') {
+			if (isViewCueTrigger || !this.clickFenceActive) { editorView.dispatch({}); }
+		}
+
+		this.resetCueTimeout = setTimeout(() => {
+			this.cueFlashActive = false;
+			if (this.settings.blockCursorMode === 'flash') {
+				editorView.dispatch({});
+			}
+		}, this.settings.lineDuration);
 	}
 
 	showLineCue(editorView: EditorView) {
