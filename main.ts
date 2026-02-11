@@ -15,9 +15,9 @@ class EndOfLineWidget extends WidgetType {
 			color: ${this.contrastColor};
 			display: inline-block;
 			width: 0.5em;
-			pointer-events: none;           /* ← add this */
+			pointer-events: none;
 		`;
-		span.setAttribute('aria-hidden', 'true'); /* optional */
+		span.setAttribute('aria-hidden', 'true');
 		return span;
 	}
 	
@@ -27,22 +27,13 @@ export default class CursorCuesPlugin extends Plugin {
 	settings: CursorCuesPluginSettings;
 	private styleElement: HTMLStyleElement | null = null;
 
-	private lastCursorPosition: number | null = null;
-	private lastCursorCoords: { x: number, y: number } | null = null;
-	private keyPressStartCoords: { x: number, y: number } | null = null;
-	private pendingKeyPressStartCapture: boolean = false;
-	private wasJumpKey: boolean = false;
-
 	private lastViewChange: number = 0;
 	private cueTimeout: NodeJS.Timeout | null = null;
 	private resetCueTimeout: NodeJS.Timeout | null = null;
 	private scrollDebounceTimer: NodeJS.Timeout | null = null;
 	private lastScrollPosition: number = 0;
-	private mouseDownFlag: boolean = false;
-	private isKeyHeld: boolean = false;
 	private cueFlashActive: boolean = false;
 	private decorationView: EditorView | null = null;
-	private ambientMuteUntil: number = 0;
 	private clickFenceActive: boolean = false;
 	private pendingCueTrigger: string | null = null;
 	private scrollCueSuppressedUntil: number = 0;
@@ -54,16 +45,11 @@ export default class CursorCuesPlugin extends Plugin {
 		const decorationPlugin = this.createCueDecorationPlugin();
 		this.registerEditorExtension([
 			decorationPlugin,
-			this.createDOMEventHandlers(),
-			this.createUpdateListener()
+			this.createDOMEventHandlers()
 		]);
 
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
-				// Reset cursor tracking so the first update in the new view
-				// doesn't compare against the old document's position.
-				this.lastCursorPosition = null;
-				this.lastCursorCoords = null;
 				if (this.settings.flashOnWindowChanges) {
 					requestAnimationFrame(() => requestAnimationFrame(() => this.scheduleCue('view-change', false)));
 				}
@@ -84,44 +70,13 @@ export default class CursorCuesPlugin extends Plugin {
 			})
 		);
 
-		window.addEventListener('keydown', (event: KeyboardEvent) => {
-			if (this.isLinkNavigationKey(event)) {
-				return;
-			}
-			const isMovementKey = this.isNavigationKey(event);
-			const isJumpKey = this.isJumpNavigationKey(event);
-
-			if (isMovementKey && !this.isKeyHeld) {
-				console.log('DEBUG: keydown -', event.key);
-				this.isKeyHeld = true;
-				this.pendingKeyPressStartCapture = true;
-				this.wasJumpKey = isJumpKey;
-			}
-		}, false);
-
-		window.addEventListener('keyup', (event: KeyboardEvent) => {
-			if (this.isKeyHeld) {
-				// Also trigger on modifier release (Ctrl/Meta/Alt) to handle
-				// cases where the modifier is released before the letter key
-				// (e.g. Ctrl released before 'a' in a Ctrl+Home combo).
-				const isModifier = ['Control', 'Meta', 'Alt'].includes(event.key);
-				if (this.isNavigationKey(event) || isModifier) {
-					console.log('DEBUG: keyup -', event.key);
-					this.handleKeyRelease();
-				}
-			}
-		}, false)
-		// Global click fence (max-compat): block cue work during pointer->click and a short tail; also mute ambient cues
+		// Global click fence: block cue work during pointer->click and a short tail
 		const startFence = () => { this.clickFenceActive = true; };
-		const endFenceSoon = () => { setTimeout(() => { this.clickFenceActive = false; }, 400); }; // 400ms tail
+		const endFenceSoon = () => { setTimeout(() => { this.clickFenceActive = false; }, 400); };
 		window.addEventListener('pointerdown', startFence, { capture: true });
 		window.addEventListener('pointerup', endFenceSoon, { capture: true });
 		window.addEventListener('pointercancel', endFenceSoon, { capture: true });
-		window.addEventListener('click', () => { 
-			endFenceSoon(); 
-			this.ambientMuteUntil = Date.now() + 500; // mute ambient cues for 500ms after any click
-		}, { capture: true });
-;
+		window.addEventListener('click', () => { endFenceSoon(); }, { capture: true });
 	}
 
 	createCueDecorationPlugin() {
@@ -192,215 +147,53 @@ export default class CursorCuesPlugin extends Plugin {
 	}
 
 	createDOMEventHandlers() {
-	const plugin = this;
-
-	// ✅ helper must be outside the handlers object
-	const isEditorLink = (el: Element | null): boolean => {
-	if (!el) return false;
-	
-	// Check element itself and all parents up to 5 levels
-	let current: Element | null = el;
-	let depth = 0;
-	while (current && depth < 5) {
-		// Check for link-related classes and attributes
-		if (current.matches('a, [data-href], [href]')) return true;
-		if (current.classList.contains('internal-link')) return true;
-		if (current.classList.contains('external-link')) return true;
-		if (current.classList.contains('cm-link')) return true;
-		if (current.classList.contains('cm-hmd-internal-link')) return true;
-		if (current.classList.contains('cm-url')) return true;
-		
-		// Check if this element or any parent has link-related data attributes
-		if (current.hasAttribute('data-href')) return true;
-		
-		current = current.parentElement;
-		depth++;
-	    }
-		return false;
-	};
-
-	return EditorView.domEventHandlers({
-		scroll: (event: Event, view: EditorView) => {
-		if (!plugin.settings.flashOnWindowScrolls) return false;
-
-		const currentScrollPos = view.scrollDOM.scrollTop;
-		const scrollDelta = Math.abs(currentScrollPos - plugin.lastScrollPosition);
-		plugin.lastScrollPosition = currentScrollPos;
-
-		// While a cue is active (or was recently shown), keep extending the
-		// suppression window and cancel any pending debounce.  This prevents
-		// momentum / inertial scrolling from triggering a second flash.
-		const now = Date.now();
-		if (plugin.cueFlashActive || now < plugin.scrollCueSuppressedUntil) {
-			plugin.scrollCueSuppressedUntil = now + 300;
-			if (plugin.scrollDebounceTimer) {
-				clearTimeout(plugin.scrollDebounceTimer);
-				plugin.scrollDebounceTimer = null;
-			}
-			return false;
-		}
-
-		if (plugin.scrollDebounceTimer) {
-			clearTimeout(plugin.scrollDebounceTimer);
-		}
-
-		const debounceTime = scrollDelta < 5 ? 250 : 150;
-		plugin.scrollDebounceTimer = setTimeout(() => {
-			plugin.scheduleCue('scroll', false);
-			plugin.scrollDebounceTimer = null;
-		}, debounceTime);
-
-		return false;
-		},
-
-		// ✅ handlers are properties; no const declarations here
-		mousedown(event: MouseEvent) {
-			const target = event.target as HTMLElement;
-			if (isEditorLink(target)) {
-				return true; // Return true to let event propagate normally
-			}
-			plugin.mouseDownFlag = true;
-			// Remove the mouse-click cue scheduling entirely - it interferes
-			return false;
-		},
-
-		mouseup: (event: MouseEvent) => {
-		const target = event.target as HTMLElement;
-		if (isEditorLink(target)) return false; // don't interfere with real links
-
-		setTimeout(() => {
-			plugin.mouseDownFlag = false;
-		}, 10);
-		return false;
-		},
-	});
-	}
-
-
-	private handleKeyRelease() {
-		if (this.isKeyHeld) {
-			if (this.wasJumpKey && this.settings.flashOnCursorJumpKeys) {
-				console.log('DEBUG: Triggering cue for jump key');
-				this.scheduleCue('key-navigation', false);
-			} else if (this.keyPressStartCoords && this.lastCursorCoords && this.settings.flashOnLongSingleMoveRepeats) {
-				const dx = this.lastCursorCoords.x - this.keyPressStartCoords.x;
-				const dy = this.lastCursorCoords.y - this.keyPressStartCoords.y;
-				const pixelDistance = Math.sqrt(dx * dx + dy * dy);
-				console.log('DEBUG: Distance calculated', pixelDistance);
-
-				if (pixelDistance > 200) {
-					console.log('DEBUG: Triggering cue');
-					this.scheduleCue('key-navigation', false);
-				}
-			}
-		}
-
-		this.isKeyHeld = false;
-		this.keyPressStartCoords = null;
-		this.pendingKeyPressStartCapture = false;
-		this.wasJumpKey = false;
-	}
-
-	createUpdateListener() {
 		const plugin = this;
-		return EditorView.updateListener.of((update: ViewUpdate) => {
-			if (!update.view.hasFocus) return;
 
-			const currentPos = update.state.selection.main.head;
-			const coords = update.view.coordsAtPos(currentPos);
-			const currentCoords = coords ? { x: coords.left, y: coords.top } : null;
+		return EditorView.domEventHandlers({
+			scroll: (event: Event, view: EditorView) => {
+				if (!plugin.settings.flashOnWindowScrolls) return false;
 
-			if (plugin.pendingKeyPressStartCapture && currentCoords) {
-				console.log('DEBUG: Capturing keyPressStartCoords', currentCoords);
-				plugin.keyPressStartCoords = currentCoords;
-				plugin.pendingKeyPressStartCapture = false;
-			}
+				const currentScrollPos = view.scrollDOM.scrollTop;
+				const scrollDelta = Math.abs(currentScrollPos - plugin.lastScrollPosition);
+				plugin.lastScrollPosition = currentScrollPos;
 
-			if (plugin.lastCursorPosition !== null && currentCoords && plugin.lastCursorCoords) {
-				const dx = currentCoords.x - plugin.lastCursorCoords.x;
-				const dy = currentCoords.y - plugin.lastCursorCoords.y;
-				const pixelDistance = Math.sqrt(dx * dx + dy * dy);
-
-				if (plugin.settings.flashOnLongSingleMoveRepeats &&
-					pixelDistance > 200 &&
-					!plugin.isKeyHeld &&
-					plugin.settings.flashOnMouseClick &&
-					!plugin.mouseDownFlag) {
-					plugin.scheduleCue('cursor-jump', false);
-				}
-
-				// Position-based line/note start/end jump detection.
-				// Catches any command (emacs Ctrl+A/E, vim gg/G, plugins, etc.)
-				// that moves the cursor to a boundary, regardless of keybinding.
-				if (plugin.settings.flashOnCursorJumpKeys &&
-					!update.docChanged &&
-					!plugin.isKeyHeld &&
-					!plugin.mouseDownFlag &&
-					currentPos !== plugin.lastCursorPosition &&
-					update.state.selection.main.empty) {
-
-					const line = update.state.doc.lineAt(currentPos);
-					const atLineStart = currentPos === line.from;
-					const atLineEnd = currentPos === line.to;
-					const atNoteStart = currentPos === 0;
-					const atNoteEnd = currentPos >= update.state.doc.length;
-
-					if ((atNoteStart || atNoteEnd) && pixelDistance > 50) {
-						plugin.scheduleCue('position-jump', false);
-					} else if ((atLineStart || atLineEnd) && line.length > 5 && pixelDistance > 80) {
-						plugin.scheduleCue('position-jump', false);
+				// While a cue is active (or was recently shown), keep extending the
+				// suppression window and cancel any pending debounce.  This prevents
+				// momentum / inertial scrolling from triggering a second flash.
+				const now = Date.now();
+				if (plugin.cueFlashActive || now < plugin.scrollCueSuppressedUntil) {
+					plugin.scrollCueSuppressedUntil = now + 300;
+					if (plugin.scrollDebounceTimer) {
+						clearTimeout(plugin.scrollDebounceTimer);
+						plugin.scrollDebounceTimer = null;
 					}
+					return false;
 				}
-			}
 
-			plugin.lastCursorPosition = currentPos;
-			plugin.lastCursorCoords = currentCoords;
+				if (plugin.scrollDebounceTimer) {
+					clearTimeout(plugin.scrollDebounceTimer);
+				}
+
+				const debounceTime = scrollDelta < 5 ? 250 : 150;
+				plugin.scrollDebounceTimer = setTimeout(() => {
+					plugin.scheduleCue('scroll', false);
+					plugin.scrollDebounceTimer = null;
+				}, debounceTime);
+
+				return false;
+			}
 		});
 	}
 
-	isNavigationKey(event: KeyboardEvent): boolean {
-		const key = event.key;
-		const ctrl = event.ctrlKey;
-		const alt = event.altKey;
-
-		if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) return true;
-		if (['PageUp', 'PageDown', 'Home', 'End'].includes(key)) return true;
-		if (['h', 'j', 'k', 'l', 'w', 'b', 'e', 'g', 'G'].includes(key) && !ctrl && !alt) return true;
-		if (ctrl && ['n', 'p', 'f', 'b', 'd', 'k'].includes(key)) return true;
-		if (alt && ['f', 'b'].includes(key)) return true;
-		return false;
-	}
-
-	isJumpNavigationKey(event: KeyboardEvent): boolean {
-		const key = event.key;
-		const ctrl = event.ctrlKey;
-
-		if (['Home', 'End'].includes(key)) return true;
-		if (ctrl && ['Home', 'End'].includes(key)) return true;
-		return false;
-	}
-
-	private isLinkNavigationKey(event: KeyboardEvent): boolean {
-            const key = event.key;
-            const ctrl = event.ctrlKey;
-            const meta = event.metaKey;
-            const alt = event.altKey;
-            if (key === 'Enter' && (ctrl || meta || alt)) return true;
-            if ((ctrl || meta) && key === 'o') return true;
-            return false;
-        }
-    
-    scheduleCue(trigger: string, isMouseClick: boolean) {
-  if (isMouseClick) return; // remove mouse-click cues entirely
-  const isViewTrigger = trigger === 'view-change' || trigger === 'layout-change';
-  // View/layout triggers bypass click fence & ambient mute because
-  // switching notes inherently involves a click.
-  if (!isViewTrigger && this.clickFenceActive) return;
-  const now = Date.now();
-  if (trigger === 'css-change' && now < this.ambientMuteUntil) return;
-  if (isMouseClick && !this.settings.flashOnMouseClick) return;
-  if (this.cueFlashActive || this.pendingCueTrigger) return;
-  if (now - this.lastViewChange < 100) return;
+	scheduleCue(trigger: string, isMouseClick: boolean) {
+		if (isMouseClick) return;
+		const isViewTrigger = trigger === 'view-change' || trigger === 'layout-change';
+		// View/layout triggers bypass click fence because
+		// switching notes inherently involves a click.
+		if (!isViewTrigger && this.clickFenceActive) return;
+		if (this.cueFlashActive || this.pendingCueTrigger) return;
+		const now = Date.now();
+		if (now - this.lastViewChange < 100) return;
 
 		this.lastViewChange = now;
 		if (this.cueTimeout) {
@@ -580,7 +373,7 @@ export default class CursorCuesPlugin extends Plugin {
 		const gLinear = gsRGB <= 0.03928 ? gsRGB / 12.92 : Math.pow((gsRGB + 0.055) / 1.055, 2.4);
 		const bLinear = bsRGB <= 0.03928 ? bsRGB / 12.92 : Math.pow((bsRGB + 0.055) / 1.055, 2.4);
 
-		return 0.2126 * rLinear + 0.7152 * gLinear + 0.0722 * bLinear;
+		return 0.2126 * rLinear + 0.7150 * gLinear + 0.0722 * bLinear;
 	}
 
 	getContrastRatio(color1: string, color2: string): number {

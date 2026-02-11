@@ -8,13 +8,10 @@ export interface CursorCuesPluginSettings {
 	cursorColorLight: string;
 	cursorColorDark: string;
 	lineDuration: number;
-        cursorDuration: number;
-        useThemeColors: boolean;
+	cursorDuration: number;
+	useThemeColors: boolean;
 	flashOnWindowScrolls: boolean;
 	flashOnWindowChanges: boolean;
-	flashOnLongSingleMoveRepeats: boolean;
-	flashOnCursorJumpKeys: boolean;
-	flashOnMouseClick: boolean;
 }
 
 export const DEFAULT_SETTINGS: CursorCuesPluginSettings = {
@@ -22,14 +19,11 @@ export const DEFAULT_SETTINGS: CursorCuesPluginSettings = {
 	lineHighlightMode: 'centered',
 	cursorColorLight: '#6496ff',
 	cursorColorDark: '#6496ff',
-        lineDuration: 800,
-        cursorDuration: 800,
-        useThemeColors: true,
+	lineDuration: 800,
+	cursorDuration: 800,
+	useThemeColors: true,
 	flashOnWindowScrolls: true,
-	flashOnWindowChanges: true,
-	flashOnLongSingleMoveRepeats: true,
-	flashOnCursorJumpKeys: true,
-	flashOnMouseClick: false
+	flashOnWindowChanges: true
 }
 
 export class CursorCuesSettingTab extends PluginSettingTab {
@@ -157,36 +151,6 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.flashOnWindowChanges)
 				.onChange(async (value) => {
 					this.plugin.settings.flashOnWindowChanges = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Flash on long single move repeats')
-			.setDesc('Show cue when cursor moves a large pixel distance from held key (>200px)')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.flashOnLongSingleMoveRepeats)
-				.onChange(async (value) => {
-					this.plugin.settings.flashOnLongSingleMoveRepeats = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Flash after cursor jump keys')
-			.setDesc('Show cue after jumping to line start/end or note start/end, e.g. with Home/End or Ctrl+Home/End')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.flashOnCursorJumpKeys)
-				.onChange(async (value) => {
-					this.plugin.settings.flashOnCursorJumpKeys = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Flash on mouse click')
-			.setDesc('Show cue when clicking to move cursor')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.flashOnMouseClick)
-				.onChange(async (value) => {
-					this.plugin.settings.flashOnMouseClick = value;
 					await this.plugin.saveSettings();
 				}));
 	}
