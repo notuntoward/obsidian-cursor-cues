@@ -37,12 +37,17 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 	display(): void {
 		const {containerEl} = this;
 		containerEl.empty();
-		containerEl.createEl('h2', {text: 'Cursor Cues Settings'});
-		containerEl.createEl('p', {text: 'Configure when and how cursor cues appear.'});
+
+		// ===========================================
+		// CURSOR
+		// ===========================================
+		new Setting(containerEl)
+			.setName('Cursor')
+			.setHeading();
 
 		new Setting(containerEl)
 			.setName('Block cursor')
-			.setDesc('Show block around character at cursor: always visible, only during cue flash, or off')
+			.setDesc('Show a colored block around the character at the cursor position')
 			.addDropdown(dropdown => dropdown
 				.addOption('always', 'Always on')
 				.addOption('flash', 'Only during cue flash')
@@ -54,13 +59,20 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 					this.display();
 				}));
 
+		// ===========================================
+		// LINE HIGHLIGHT
+		// ===========================================
 		new Setting(containerEl)
-			.setName('Flash line highlight')
-			.setDesc('Position of line highlight gradient: left-aligned, centered around cursor, or off')
+			.setName('Line Highlight')
+			.setHeading();
+
+		new Setting(containerEl)
+			.setName('Position')
+			.setDesc('Show a gradient highlight on the current line during a cue')
 			.addDropdown(dropdown => dropdown
+				.addOption('off', 'Off')
 				.addOption('left', 'Left-aligned')
 				.addOption('centered', 'Centered around cursor')
-				.addOption('off', 'Off')
 				.setValue(this.plugin.settings.lineHighlightMode)
 				.onChange(async (value: 'left' | 'centered' | 'off') => {
 					this.plugin.settings.lineHighlightMode = value;
@@ -69,8 +81,57 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
+			.setName('Fade duration')
+			.setDesc('How long the line highlight takes to fade out (milliseconds)')
+			.addText(text => text
+				.setPlaceholder('800')
+				.setValue(this.plugin.settings.lineDuration.toString())
+				.onChange(async (value) => {
+					const num = parseInt(value);
+					if (!isNaN(num) && num > 0 && num <= 5000) {
+						this.plugin.settings.lineDuration = num;
+						this.plugin.settings.cursorDuration = num;
+						await this.plugin.saveSettings();
+					}
+				}));
+
+		// ===========================================
+		// MOVEMENT FLASH TRIGGERS
+		// ===========================================
+		new Setting(containerEl)
+			.setName('Movement Flash Triggers')
+			.setHeading();
+
+		new Setting(containerEl)
+			.setName('On scroll')
+			.setDesc('Show cue when the view scrolls')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.flashOnWindowScrolls)
+				.onChange(async (value) => {
+					this.plugin.settings.flashOnWindowScrolls = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('On file switch')
+			.setDesc('Show cue when switching between notes or panes')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.flashOnWindowChanges)
+				.onChange(async (value) => {
+					this.plugin.settings.flashOnWindowChanges = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// ===========================================
+		// COLORS
+		// ===========================================
+		new Setting(containerEl)
+			.setName('Colors')
+			.setHeading();
+
+		new Setting(containerEl)
 			.setName('Use theme colors')
-			.setDesc('Automatically derive cue colors from your Obsidian theme (uses accent color)')
+			.setDesc('Automatically use your Obsidian theme\'s accent color')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.useThemeColors)
 				.onChange(async (value) => {
@@ -80,78 +141,31 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				}));
 
 		if (!this.plugin.settings.useThemeColors) {
-			containerEl.createEl('h3', {text: 'Color Settings'});
-
-			if (this.plugin.settings.lineHighlightMode !== 'off') {
-				containerEl.createEl('h4', {text: 'Cursor Highlight Colors'});
-
-				new Setting(containerEl)
-					.setName('Light theme cursor color')
-					.setDesc('Cursor highlight color for light theme (hex code, default: #6496ff)')
-					.addText(text => text
-						.setPlaceholder('#6496ff')
-						.setValue(this.plugin.settings.cursorColorLight)
-						.onChange(async (value) => {
-							if (/^#[0-9A-F]{6}$/i.test(value)) {
-								this.plugin.settings.cursorColorLight = value;
-								await this.plugin.saveSettings();
-							}
-						}));
-
-				new Setting(containerEl)
-					.setName('Dark theme cursor color')
-					.setDesc('Cursor highlight color for dark theme (hex code, default: #6496ff)')
-					.addText(text => text
-						.setPlaceholder('#6496ff')
-						.setValue(this.plugin.settings.cursorColorDark)
-						.onChange(async (value) => {
-							if (/^#[0-9A-F]{6}$/i.test(value)) {
-								this.plugin.settings.cursorColorDark = value;
-								await this.plugin.saveSettings();
-							}
-						}));
-			}
-		}
-
-		containerEl.createEl('h3', {text: 'Animation Settings'});
-
-		if (this.plugin.settings.lineHighlightMode !== 'off') {
 			new Setting(containerEl)
-				.setName('Line fade duration')
-				.setDesc('How long the line highlight takes to fade out in milliseconds (default: 800)')
+				.setName('Light theme color')
+				.setDesc('Cue color for light theme (hex code)')
 				.addText(text => text
-					.setPlaceholder('800')
-					.setValue(this.plugin.settings.lineDuration.toString())
+					.setPlaceholder('#6496ff')
+					.setValue(this.plugin.settings.cursorColorLight)
 					.onChange(async (value) => {
-						const num = parseInt(value);
-						if (!isNaN(num) && num > 0 && num <= 5000) {
-							this.plugin.settings.lineDuration = num;
-							this.plugin.settings.cursorDuration = num;
+						if (/^#[0-9A-F]{6}$/i.test(value)) {
+							this.plugin.settings.cursorColorLight = value;
+							await this.plugin.saveSettings();
+						}
+					}));
+
+			new Setting(containerEl)
+				.setName('Dark theme color')
+				.setDesc('Cue color for dark theme (hex code)')
+				.addText(text => text
+					.setPlaceholder('#6496ff')
+					.setValue(this.plugin.settings.cursorColorDark)
+					.onChange(async (value) => {
+						if (/^#[0-9A-F]{6}$/i.test(value)) {
+							this.plugin.settings.cursorColorDark = value;
 							await this.plugin.saveSettings();
 						}
 					}));
 		}
-
-		containerEl.createEl('h3', {text: 'When to show cues'});
-
-		new Setting(containerEl)
-			.setName('Flash on window scrolls')
-			.setDesc('Show cue when the view scrolls significantly')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.flashOnWindowScrolls)
-				.onChange(async (value) => {
-					this.plugin.settings.flashOnWindowScrolls = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Flash on window changes')
-			.setDesc('Show cue when switching between files or panes')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.flashOnWindowChanges)
-				.onChange(async (value) => {
-					this.plugin.settings.flashOnWindowChanges = value;
-					await this.plugin.saveSettings();
-				}));
 	}
 }
