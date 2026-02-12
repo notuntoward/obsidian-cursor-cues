@@ -26,6 +26,17 @@
   color: var(--cursor-fg) !important;
 }
 
+/* Thick vertical line cursor */
+.cursor-cues-thick-vertical {
+  pointer-events: none;
+  contain: paint;
+  will-change: opacity, transform;
+  /* Creates a thick left vertical line with constant width */
+  border-left: 0.75ex solid var(--cursor-bg) !important;
+  background-color: transparent !important;
+  color: var(--cursor-fg) !important;
+}
+
 @keyframes cue-char-fade {
 	0% {
 		opacity: 0.9;

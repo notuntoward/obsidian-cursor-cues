@@ -129,10 +129,12 @@ export default class CursorCuesPlugin extends Plugin {
 						});
 						builder.add(pos, pos, widget);
 					} else {
-
+						const cursorClass = plugin.settings.blockCursorStyle === 'thick-vertical'
+							? 'cursor-cues-thick-vertical'
+							: 'cursor-cues-block-mark';
 						const decoration = Decoration.mark({
 							attributes: {
-								class: 'cursor-cues-block-mark',
+								class: cursorClass,
 								}
 						});
 						builder.add(pos, pos + 1, decoration);
@@ -406,12 +408,28 @@ export default class CursorCuesPlugin extends Plugin {
 		
 		this.styleElement = document.createElement('style');
 		this.styleElement.id = 'cursor-cues-dynamic-styles';
-		this.styleElement.textContent = `
+		
+		let styleContent = `
 			.cursor-cues-block-mark {
 				background-color: ${markerColor} !important;
 				color: ${contrastColor} !important;
 			}
 		`;
+		
+		if (this.settings.blockCursorStyle === 'thick-vertical') {
+			styleContent += `
+			.cursor-cues-thick-vertical {
+				background: linear-gradient(to right,
+					${markerColor} 0%,
+					${markerColor} 35%,
+					transparent 35%
+				) !important;
+				color: ${contrastColor} !important;
+			}
+			`;
+		}
+		
+		this.styleElement.textContent = styleContent;
 		document.head.appendChild(this.styleElement);
 		console.log(`Dynamic CSS injected for cursor`);
 	}

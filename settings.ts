@@ -4,6 +4,7 @@ import CursorCuesPlugin from './main';
 
 export interface CursorCuesPluginSettings {
 	blockCursorMode: 'always' | 'flash' | 'off';
+	blockCursorStyle: 'block' | 'thick-vertical';
 	lineHighlightMode: 'left' | 'centered' | 'off';
 	cursorColorLight: string;
 	cursorColorDark: string;
@@ -17,6 +18,7 @@ export interface CursorCuesPluginSettings {
 
 export const DEFAULT_SETTINGS: CursorCuesPluginSettings = {
 	blockCursorMode: 'always',
+	blockCursorStyle: 'block',
 	lineHighlightMode: 'centered',
 	cursorColorLight: '#6496ff',
 	cursorColorDark: '#6496ff',
@@ -48,19 +50,32 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 			.setHeading();
 
 		new Setting(containerEl)
-			.setName('Block cursor')
+			.setName('Custom Cursor')
 			.setDesc('Show a colored block around the character at the cursor position')
 			.addDropdown(dropdown => dropdown
 				.addOption('always', 'Always on')
-				.addOption('flash', 'Only during cue flash')
-				.addOption('off', 'Off')
+				.addOption('flash', 'Only during flash')
+				.addOption('off', 'Off (use Obsidian default cursor)')
 				.setValue(this.plugin.settings.blockCursorMode)
 				.onChange(async (value: 'always' | 'flash' | 'off') => {
 					this.plugin.settings.blockCursorMode = value;
 					await this.plugin.saveSettings();
 					this.display();
 				}));
-
+	
+		new Setting(containerEl)
+			.setName('Custom Cursor Style')
+			.setDesc('Choose the visual style for the block cursor')
+			.addDropdown(dropdown => dropdown
+				.addOption('block', 'Block')
+				.addOption('thick-vertical', 'Thick vertical')
+				.setValue(this.plugin.settings.blockCursorStyle)
+				.onChange(async (value: 'block' | 'thick-vertical') => {
+					this.plugin.settings.blockCursorStyle = value;
+					await this.plugin.saveSettings();
+					this.display();
+				}));
+	
 		// ===========================================
 		// LINE HIGHLIGHT
 		// ===========================================
