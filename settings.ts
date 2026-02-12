@@ -12,6 +12,7 @@ export interface CursorCuesPluginSettings {
 	useThemeColors: boolean;
 	flashOnWindowScrolls: boolean;
 	flashOnWindowChanges: boolean;
+	flashSize: number;
 }
 
 export const DEFAULT_SETTINGS: CursorCuesPluginSettings = {
@@ -19,11 +20,12 @@ export const DEFAULT_SETTINGS: CursorCuesPluginSettings = {
 	lineHighlightMode: 'centered',
 	cursorColorLight: '#6496ff',
 	cursorColorDark: '#6496ff',
-	lineDuration: 800,
-	cursorDuration: 800,
+	lineDuration: 500,
+	cursorDuration: 500,
 	useThemeColors: true,
 	flashOnWindowScrolls: true,
-	flashOnWindowChanges: true
+	flashOnWindowChanges: true,
+	flashSize: 8
 }
 
 export class CursorCuesSettingTab extends PluginSettingTab {
@@ -80,19 +82,31 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 					this.display();
 				}));
 
-		new Setting(containerEl)
+		const fadeDurationSetting = new Setting(containerEl)
 			.setName('Fade duration')
-			.setDesc('How long the line highlight takes to fade out (milliseconds)')
-			.addText(text => text
-				.setPlaceholder('800')
-				.setValue(this.plugin.settings.lineDuration.toString())
-				.onChange(async (value) => {
-					const num = parseInt(value);
-					if (!isNaN(num) && num > 0 && num <= 5000) {
-						this.plugin.settings.lineDuration = num;
-						this.plugin.settings.cursorDuration = num;
-						await this.plugin.saveSettings();
-					}
+			.setDesc(`How long the line highlight takes to fade out (0.25s - 1.5s) - ${(this.plugin.settings.lineDuration / 1000).toFixed(2)}s`)
+			.addSlider(slider => slider
+				.setLimits(0.25, 1.5, 0.05)
+				.setValue(this.plugin.settings.lineDuration / 1000)
+				.setDynamicTooltip()
+				.onChange(async (value: number) => {
+					this.plugin.settings.lineDuration = Math.round(value * 1000);
+					this.plugin.settings.cursorDuration = Math.round(value * 1000);
+					fadeDurationSetting.setDesc(`How long the line highlight takes to fade out (0.25s - 1.5s) - ${value.toFixed(2)}s`);
+					await this.plugin.saveSettings();
+				}));
+
+		const flashSizeSetting = new Setting(containerEl)
+			.setName('Flash size')
+			.setDesc(`Width of the line highlight flash (4-15 characters) - ${this.plugin.settings.flashSize}ch`)
+			.addSlider(slider => slider
+				.setLimits(4, 15, 1)
+				.setValue(this.plugin.settings.flashSize)
+				.setDynamicTooltip()
+				.onChange(async (value: number) => {
+					this.plugin.settings.flashSize = value;
+					flashSizeSetting.setDesc(`Width of the line highlight flash (4-15 characters) - ${value}ch`);
+					await this.plugin.saveSettings();
 				}));
 
 		// ===========================================

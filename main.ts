@@ -261,10 +261,11 @@ export default class CursorCuesPlugin extends Plugin {
 		const lineHeight = editorView.defaultLineHeight;
 		const { color, opacity } = this.getCueColor();
 		const rgb = this.hexToRgb(color);
-		// Calculate 20em in pixels (approximate font size)
+		// Calculate highlight distance based on flashSize setting (in character widths)
 		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
-		const fadeDistance = 20 * fontSize; // 20em in pixels
-		const fadePercent = Math.min(100, (fadeDistance / editorRect.width) * 100);
+		const charWidth = fontSize * 0.6; // Approximate character width
+		const highlightDistance = this.settings.flashSize * charWidth; // Direct width in pixels
+		const highlightPercent = Math.min(100, (highlightDistance / editorRect.width) * 100);
 
 		const lineHighlight = document.createElement('div');
 		lineHighlight.className = 'obsidian-cue-line';
@@ -276,8 +277,8 @@ export default class CursorCuesPlugin extends Plugin {
 		height: ${lineHeight}px;
 		background: linear-gradient(to right,
 			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity}) 0%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) ${fadePercent * 0.5}%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${fadePercent}%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) ${highlightPercent * 0.5}%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${highlightPercent}%,
 			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
 		);
 		pointer-events: none;
@@ -312,9 +313,10 @@ export default class CursorCuesPlugin extends Plugin {
 		lineHighlight.className = 'obsidian-cue-cursor-line';
 		const peakOpacity = opacity;
 		const fadeOpacity = opacity * 0.75;
-		// Calculate 13.3em spread on each side (26.6em total)
+		// Calculate spread distance based on flashSize setting (in character widths)
 		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
-		const spreadDistance = 13.3 * fontSize; // 13.3em in pixels
+		const charWidth = fontSize * 0.6; // Approximate character width
+		const spreadDistance = (this.settings.flashSize / 2) * charWidth; // flashSize/2 on each side
 		const spreadPercent = (spreadDistance / editorRect.width) * 100;
 		const leftEdge = Math.max(0, cursorPercent - spreadPercent);
 		const rightEdge = Math.min(100, cursorPercent + spreadPercent);
