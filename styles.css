@@ -16,6 +16,14 @@
   pointer-events: none; /* ensure overlays never catch clicks */
 }
 
+/* Hide the native Obsidian cursor when custom cursor decorations are present */
+.cm-content:has(.cursor-cues-block-mark),
+.cm-content:has(.cursor-cues-thick-vertical),
+.cm-line:has(.cursor-cues-block-mark),
+.cm-line:has(.cursor-cues-thick-vertical) {
+  caret-color: transparent !important;
+}
+
 /* Make block cursor overlay click-through too */
 .cursor-cues-block-mark {
   pointer-events: none;
@@ -26,15 +34,14 @@
   color: var(--cursor-fg) !important;
 }
 
-/* Thick vertical line cursor */
+/* Thick vertical line cursor - imitates standard Obsidian cursor with custom color */
 .cursor-cues-thick-vertical {
   pointer-events: none;
   contain: paint;
   will-change: opacity, transform;
-  /* Creates a thick left vertical line with constant width */
-  border-left: 0.75ex solid var(--cursor-bg) !important;
+  /* Creates a 2px wide vertical line using background gradient */
+  background: linear-gradient(90deg, var(--cursor-bg) 0px, var(--cursor-bg) 2px, transparent 2px) !important;
   background-color: transparent !important;
-  color: var(--cursor-fg) !important;
 }
 
 @keyframes cue-char-fade {

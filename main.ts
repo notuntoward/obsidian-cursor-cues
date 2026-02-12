@@ -4,23 +4,55 @@ import { RangeSetBuilder } from '@codemirror/state';
 import { CursorCuesPluginSettings, DEFAULT_SETTINGS, CursorCuesSettingTab } from './settings';
 
 class EndOfLineWidget extends WidgetType {
-	constructor(private markerColor: string, private contrastColor: string) {
+	constructor(private markerColor: string, private contrastColor: string, private style: 'block' | 'thick-vertical' = 'block', private lineHeight?: number) {
 		super();
 	}
 	toDOM() {
 		const span = document.createElement('span');
 		span.textContent = ' ';
+		
+		if (this.style === 'thick-vertical') {
+			const heightStyle = this.lineHeight ? `height: ${this.lineHeight}px;` : 'height: 1em;';
+			span.style.cssText = `
+				display: inline-block;
+				width: 2px;
+				${heightStyle}
+				background-color: ${this.markerColor};
+				pointer-events: none;
+				vertical-align: text-bottom;
+			`;
+		} else {
+			span.style.cssText = `
+				background-color: ${this.markerColor};
+				color: ${this.contrastColor};
+				display: inline-block;
+				width: 0.5em;
+				pointer-events: none;
+			`;
+		}
+		span.setAttribute('aria-hidden', 'true');
+		return span;
+	}
+}
+
+class VerticalCursorWidget extends WidgetType {
+	constructor(private markerColor: string, private lineHeight: number) {
+		super();
+	}
+	toDOM() {
+		const span = document.createElement('span');
 		span.style.cssText = `
-			background-color: ${this.markerColor};
-			color: ${this.contrastColor};
 			display: inline-block;
-			width: 0.5em;
+			width: 2px;
+			height: ${this.lineHeight}px;
+			background-color: ${this.markerColor};
+			margin-right: -2px;
 			pointer-events: none;
+			vertical-align: text-bottom;
 		`;
 		span.setAttribute('aria-hidden', 'true');
 		return span;
 	}
-	
 }
 
 export default class CursorCuesPlugin extends Plugin {
@@ -112,10 +144,37 @@ export default class CursorCuesPlugin extends Plugin {
 				const contrastColor = plugin.getContrastColor(markerColor);
 				plugin.updateCursorStyles(markerColor, contrastColor);
 
+				// Get the actual line height from font-size which is more reliable
+				let actualLineHeight = view.defaultLineHeight;
+				try {
+					const domAtPos = view.domAtPos(pos);
+					if (domAtPos && domAtPos.node) {
+						const element = domAtPos.node.nodeType === 1
+							? domAtPos.node as HTMLElement
+							: domAtPos.node.parentElement;
+						if (element) {
+							const lineElement = element.closest('.cm-line');
+							if (lineElement) {
+								const computedStyle = getComputedStyle(lineElement);
+								// Use font-size which matches cursor height better
+								const fontSize = computedStyle.fontSize;
+								const parsed = parseFloat(fontSize);
+								if (!isNaN(parsed)) {
+									actualLineHeight = parsed * 1.5; // Approximate line height as 1.5x font size
+								}
+							}
+						}
+					}
+				} catch (e) {
+					// Fallback to default if there's any error
+					actualLineHeight = view.defaultLineHeight;
+				}
+
 				if (pos >= view.state.doc.length) {
 					if (view.state.doc.length > 0) {
+						const widgetStyle = plugin.settings.blockCursorStyle === 'thick-vertical' ? 'thick-vertical' : 'block';
 						const widget = Decoration.widget({
-							widget: new EndOfLineWidget(markerColor, contrastColor),
+							widget: new EndOfLineWidget(markerColor, contrastColor, widgetStyle, actualLineHeight),
 							side: 1
 						});
 						builder.add(view.state.doc.length, view.state.doc.length, widget);
@@ -123,21 +182,29 @@ export default class CursorCuesPlugin extends Plugin {
 				} else {
 					const char = view.state.doc.sliceString(pos, pos + 1);
 					if (char === '\n' || char === '') {
+						const widgetStyle = plugin.settings.blockCursorStyle === 'thick-vertical' ? 'thick-vertical' : 'block';
 						const widget = Decoration.widget({
-							widget: new EndOfLineWidget(markerColor, contrastColor),
+							widget: new EndOfLineWidget(markerColor, contrastColor, widgetStyle, actualLineHeight),
 							side: 1
 						});
 						builder.add(pos, pos, widget);
 					} else {
-						const cursorClass = plugin.settings.blockCursorStyle === 'thick-vertical'
-							? 'cursor-cues-thick-vertical'
-							: 'cursor-cues-block-mark';
-						const decoration = Decoration.mark({
-							attributes: {
-								class: cursorClass,
+						if (plugin.settings.blockCursorStyle === 'thick-vertical') {
+							// Use a widget positioned before the character for vertical cursor
+							const widget = Decoration.widget({
+								widget: new VerticalCursorWidget(markerColor, actualLineHeight),
+								side: 0
+							});
+							builder.add(pos, pos, widget);
+						} else {
+							// Use mark decoration for block cursor
+							const decoration = Decoration.mark({
+								attributes: {
+									class: 'cursor-cues-block-mark',
 								}
-						});
-						builder.add(pos, pos + 1, decoration);
+							});
+							builder.add(pos, pos + 1, decoration);
+						}
 					}
 				}
 
@@ -394,10 +461,31 @@ export default class CursorCuesPlugin extends Plugin {
 	}
 
 	getContrastColor(hexColor: string): string {
-		const whiteContrast = this.getContrastRatio(hexColor, '#ffffff');
-		const blackContrast = this.getContrastRatio(hexColor, '#000000');
-		console.log(`Cursor color ${hexColor}: white=${whiteContrast.toFixed(2)}, black=${blackContrast.toFixed(2)}, choosing ${whiteContrast > blackContrast ? 'WHITE' : 'BLACK'}`);
-		return whiteContrast > blackContrast ? '#ffffff' : '#000000';
+		// Get theme colors
+		const computedStyle = getComputedStyle(document.body);
+		const bgColor = computedStyle.getPropertyValue('--background-primary').trim() || '#ffffff';
+		const textColor = computedStyle.getPropertyValue('--text-normal').trim() || '#000000';
+		
+		// Calculate contrast ratios for both options
+		let bgContrast = 1;
+		let textContrast = 1;
+		
+		try {
+			bgContrast = this.getContrastRatio(hexColor, bgColor);
+		} catch (e) {
+			console.error('Error calculating contrast with background:', e);
+		}
+		
+		try {
+			textContrast = this.getContrastRatio(hexColor, textColor);
+		} catch (e) {
+			console.error('Error calculating contrast with text:', e);
+		}
+		
+		// Choose whichever has the highest contrast
+		const selectedColor = textContrast > bgContrast ? textColor : bgColor;
+		console.log(`Cursor color ${hexColor}: bg contrast=${bgContrast.toFixed(2)}, text contrast=${textContrast.toFixed(2)}, choosing ${textContrast > bgContrast ? 'TEXT' : 'BG'} (${selectedColor})`);
+		return selectedColor;
 	}
 
 	private updateCursorStyles(markerColor: string, contrastColor: string): void {
@@ -419,12 +507,7 @@ export default class CursorCuesPlugin extends Plugin {
 		if (this.settings.blockCursorStyle === 'thick-vertical') {
 			styleContent += `
 			.cursor-cues-thick-vertical {
-				background: linear-gradient(to right,
-					${markerColor} 0%,
-					${markerColor} 35%,
-					transparent 35%
-				) !important;
-				color: ${contrastColor} !important;
+				background: linear-gradient(90deg, ${markerColor} 0px, ${markerColor} 2px, transparent 2px) !important;
 			}
 			`;
 		}
@@ -451,6 +534,15 @@ export default class CursorCuesPlugin extends Plugin {
 			g: parseInt(result[2], 16),
 			b: parseInt(result[3], 16)
 		} : { r: 100, g: 150, b: 255 };
+	}
+
+	refreshDecorations() {
+		if (this.decorationView && this.decorationView.hasFocus) {
+			// Force a rebuild by dispatching with selection change to trigger update
+			this.decorationView.dispatch({
+				selection: this.decorationView.state.selection
+			});
+		}
 	}
 
 	async loadSettings() {

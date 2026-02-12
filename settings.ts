@@ -51,7 +51,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Custom Cursor')
-			.setDesc('Show a colored block around the character at the cursor position')
+			.setDesc('When to show a custom cursor')
 			.addDropdown(dropdown => dropdown
 				.addOption('always', 'Always on')
 				.addOption('flash', 'Only during flash')
@@ -65,7 +65,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 	
 		new Setting(containerEl)
 			.setName('Custom Cursor Style')
-			.setDesc('Choose the visual style for the block cursor')
+			.setDesc('Choose the visual style for the custom cursor')
 			.addDropdown(dropdown => dropdown
 				.addOption('block', 'Block')
 				.addOption('thick-vertical', 'Thick vertical')
@@ -172,28 +172,24 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 		if (!this.plugin.settings.useThemeColors) {
 			new Setting(containerEl)
 				.setName('Light theme color')
-				.setDesc('Cue color for light theme (hex code)')
-				.addText(text => text
-					.setPlaceholder('#6496ff')
+				.setDesc('Cue color for light theme')
+				.addColorPicker(colorPicker => colorPicker
 					.setValue(this.plugin.settings.cursorColorLight)
 					.onChange(async (value) => {
-						if (/^#[0-9A-F]{6}$/i.test(value)) {
-							this.plugin.settings.cursorColorLight = value;
-							await this.plugin.saveSettings();
-						}
+						this.plugin.settings.cursorColorLight = value;
+						await this.plugin.saveSettings();
+						this.plugin.refreshDecorations();
 					}));
-
+	
 			new Setting(containerEl)
 				.setName('Dark theme color')
-				.setDesc('Cue color for dark theme (hex code)')
-				.addText(text => text
-					.setPlaceholder('#6496ff')
+				.setDesc('Cue color for dark theme')
+				.addColorPicker(colorPicker => colorPicker
 					.setValue(this.plugin.settings.cursorColorDark)
 					.onChange(async (value) => {
-						if (/^#[0-9A-F]{6}$/i.test(value)) {
-							this.plugin.settings.cursorColorDark = value;
-							await this.plugin.saveSettings();
-						}
+						this.plugin.settings.cursorColorDark = value;
+						await this.plugin.saveSettings();
+						this.plugin.refreshDecorations();
 					}));
 		}
 	}
