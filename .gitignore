@@ -16,3 +16,6 @@ main.js
 
 # Other
 .env
+
+# User settings - stored per-vault by Obsidian
+data.json

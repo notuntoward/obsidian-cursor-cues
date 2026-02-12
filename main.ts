@@ -293,6 +293,8 @@ export default class CursorCuesPlugin extends Plugin {
 			this.showLineCue(editorView);
 		} else if (this.settings.lineHighlightMode === 'centered') {
 			this.showCursorCenteredCue(editorView);
+		} else if (this.settings.lineHighlightMode === 'right') {
+			this.showLineCueRightToLeft(editorView);
 		}
 
 		// Always set cueFlashActive as a cooldown guard to prevent
@@ -345,6 +347,50 @@ export default class CursorCuesPlugin extends Plugin {
 		width: ${editorRect.width}px;
 		height: ${lineHeight}px;
 		background: linear-gradient(to right,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity}) 0%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) ${highlightPercent * 0.5}%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${highlightPercent}%,
+			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
+		);
+		pointer-events: none;
+		z-index: 1;
+		animation: cue-line-fade ${this.settings.lineDuration}ms ease-out;
+		`;
+
+		document.body.appendChild(lineHighlight);
+		setTimeout(() => {
+			lineHighlight.remove();
+		}, this.settings.lineDuration);
+	}
+
+	showLineCueRightToLeft(editorView: EditorView) {
+		const cursor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
+		if (!cursor) return;
+
+		const pos = (cursor as any).posToOffset(cursor.getCursor());
+		const coords = editorView.coordsAtPos(pos);
+		if (!coords) return;
+
+		const editorElement = editorView.contentDOM;
+		const editorRect = editorElement.getBoundingClientRect();
+		const lineHeight = editorView.defaultLineHeight;
+		const { color, opacity } = this.getCueColor();
+		const rgb = this.hexToRgb(color);
+		// Calculate highlight distance based on flashSize setting (in character widths)
+		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
+		const charWidth = fontSize * 0.6; // Approximate character width
+		const highlightDistance = this.settings.flashSize * charWidth; // Direct width in pixels
+		const highlightPercent = Math.min(100, (highlightDistance / editorRect.width) * 100);
+
+		const lineHighlight = document.createElement('div');
+		lineHighlight.className = 'obsidian-cue-line';
+		lineHighlight.style.cssText = `
+		position: fixed;
+		left: ${editorRect.left}px;
+		top: ${coords.top}px;
+		width: ${editorRect.width}px;
+		height: ${lineHeight}px;
+		background: linear-gradient(to left,
 			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity}) 0%,
 			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) ${highlightPercent * 0.5}%,
 			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${highlightPercent}%,

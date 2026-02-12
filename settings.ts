@@ -5,7 +5,7 @@ import CursorCuesPlugin from './main';
 export interface CursorCuesPluginSettings {
 	blockCursorMode: 'always' | 'flash' | 'off';
 	blockCursorStyle: 'block' | 'thick-vertical';
-	lineHighlightMode: 'left' | 'centered' | 'off';
+	lineHighlightMode: 'left' | 'centered' | 'right' | 'off';
 	cursorColorLight: string;
 	cursorColorDark: string;
 	lineDuration: number;
@@ -65,7 +65,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 	
 		new Setting(containerEl)
 			.setName('Custom Cursor Style')
-			.setDesc('Choose the visual style for the custom cursor')
+			.setDesc('Visual style of the custom cursor')
 			.addDropdown(dropdown => dropdown
 				.addOption('block', 'Block')
 				.addOption('thick-vertical', 'Thick vertical')
@@ -77,21 +77,22 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				}));
 	
 		// ===========================================
-		// LINE HIGHLIGHT
+		// CURSOR MOVE FLASH
 		// ===========================================
 		new Setting(containerEl)
-			.setName('Line Highlight')
+			.setName('Cursor Move Flash')
 			.setHeading();
 
 		new Setting(containerEl)
-			.setName('Position')
-			.setDesc('Show a gradient highlight on the current line during a cue')
+			.setName('Flash')
+			.setDesc('Show a gradient highlight on the current line during a flash')
 			.addDropdown(dropdown => dropdown
 				.addOption('off', 'Off')
-				.addOption('left', 'Left-aligned')
 				.addOption('centered', 'Centered around cursor')
+				.addOption('left', 'Left to Right')
+				.addOption('right', 'Right to Left')
 				.setValue(this.plugin.settings.lineHighlightMode)
-				.onChange(async (value: 'left' | 'centered' | 'off') => {
+				.onChange(async (value: 'left' | 'centered' | 'right' | 'off') => {
 					this.plugin.settings.lineHighlightMode = value;
 					await this.plugin.saveSettings();
 					this.display();
@@ -99,41 +100,41 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 
 		const fadeDurationSetting = new Setting(containerEl)
 			.setName('Fade duration')
-			.setDesc(`How long the line highlight takes to fade out (0.25s - 1.5s) - ${(this.plugin.settings.lineDuration / 1000).toFixed(2)}s`)
+			.setDesc(`How long the flash takes to fade out (0.2s - 1.5s) - ${(this.plugin.settings.lineDuration / 1000).toFixed(2)}s`)
 			.addSlider(slider => slider
-				.setLimits(0.25, 1.5, 0.05)
+				.setLimits(0.2, 1.5, 0.05)
 				.setValue(this.plugin.settings.lineDuration / 1000)
 				.setDynamicTooltip()
 				.onChange(async (value: number) => {
 					this.plugin.settings.lineDuration = Math.round(value * 1000);
 					this.plugin.settings.cursorDuration = Math.round(value * 1000);
-					fadeDurationSetting.setDesc(`How long the line highlight takes to fade out (0.25s - 1.5s) - ${value.toFixed(2)}s`);
+					fadeDurationSetting.setDesc(`How long the flash takes to fade out (0.2s - 1.5s) - ${value.toFixed(2)}s`);
 					await this.plugin.saveSettings();
 				}));
 
 		const flashSizeSetting = new Setting(containerEl)
 			.setName('Flash size')
-			.setDesc(`Width of the line highlight flash (4-15 characters) - ${this.plugin.settings.flashSize}ch`)
+			.setDesc(`Width of the flash (4-15 characters) - ${this.plugin.settings.flashSize}ch`)
 			.addSlider(slider => slider
 				.setLimits(4, 15, 1)
 				.setValue(this.plugin.settings.flashSize)
 				.setDynamicTooltip()
 				.onChange(async (value: number) => {
 					this.plugin.settings.flashSize = value;
-					flashSizeSetting.setDesc(`Width of the line highlight flash (4-15 characters) - ${value}ch`);
+					flashSizeSetting.setDesc(`Width of the flash (4-15 characters) - ${value}ch`);
 					await this.plugin.saveSettings();
 				}));
 
 		// ===========================================
-		// MOVEMENT FLASH TRIGGERS
+		// FLASH TRIGGERS
 		// ===========================================
 		new Setting(containerEl)
-			.setName('Movement Flash Triggers')
+			.setName('Flash Triggers')
 			.setHeading();
 
 		new Setting(containerEl)
 			.setName('On scroll')
-			.setDesc('Show cue when the view scrolls')
+			.setDesc('Show flash when the view scrolls')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.flashOnWindowScrolls)
 				.onChange(async (value) => {
@@ -143,7 +144,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('On file switch')
-			.setDesc('Show cue when switching between notes or panes')
+			.setDesc('Show flash when switching between notes or panes')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.flashOnWindowChanges)
 				.onChange(async (value) => {
@@ -160,7 +161,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Use theme colors')
-			.setDesc('Automatically use your Obsidian theme\'s accent color')
+			.setDesc('Based on your Obsidian theme\'s accent color')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.useThemeColors)
 				.onChange(async (value) => {
@@ -172,7 +173,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 		if (!this.plugin.settings.useThemeColors) {
 			new Setting(containerEl)
 				.setName('Light theme color')
-				.setDesc('Cue color for light theme')
+				.setDesc('Color for light theme')
 				.addColorPicker(colorPicker => colorPicker
 					.setValue(this.plugin.settings.cursorColorLight)
 					.onChange(async (value) => {
@@ -183,7 +184,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 	
 			new Setting(containerEl)
 				.setName('Dark theme color')
-				.setDesc('Cue color for dark theme')
+				.setDesc('Color for dark theme')
 				.addColorPicker(colorPicker => colorPicker
 					.setValue(this.plugin.settings.cursorColorDark)
 					.onChange(async (value) => {

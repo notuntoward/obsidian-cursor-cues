@@ -1,6 +1,6 @@
 {
   "blockCursorMode": "always",
-  "blockCursorStyle": "thick-vertical",
+  "blockCursorStyle": "block",
   "lineHighlightMode": "centered",
   "cursorColorLight": "#15032b",
   "cursorColorDark": "#66ff70",

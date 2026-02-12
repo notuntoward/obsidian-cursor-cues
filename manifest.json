@@ -1,10 +1,10 @@
 {
-  "id": "cursor-cues",
-  "name": "Cursor Cues",
-  "version": "1.0.14",
+  "id": "visible-cursor",
+  "name": "Visible cursor",
+  "version": "1.0",
   "minAppVersion": "0.15.0",
-  "description": "Flash cursor position after big moves and cursor jumps - block cursor with smart highlighting",
-  "author": "Your Name",
+  "description": "Visual aids to prevent losing track of your cursor.",
+  "author": "Scott Otterson",
   "authorUrl": "https://github.com/yourusername",
   "isDesktopOnly": false
 }
