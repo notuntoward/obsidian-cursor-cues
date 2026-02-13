@@ -43,14 +43,14 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		// ===========================================
-		// CURSOR
+		// CURSOR APPEARANCE
 		// ===========================================
 		new Setting(containerEl)
-			.setName('Cursor')
+			.setName('Cursor appearance')
 			.setHeading();
 
 		new Setting(containerEl)
-			.setName('Custom Cursor')
+			.setName('Show custom cursor')
 			.setDesc('When to show a custom cursor')
 			.addDropdown(dropdown => dropdown
 				.addOption('always', 'Always on')
@@ -62,9 +62,9 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 					this.display();
 				}));
-	
+
 		new Setting(containerEl)
-			.setName('Custom Cursor Style')
+			.setName('Custom Cursor Shape')
 			.setDesc('Visual style of the custom cursor')
 			.addDropdown(dropdown => dropdown
 				.addOption('block', 'Block')
@@ -75,16 +75,16 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 					this.display();
 				}));
-	
+
 		// ===========================================
-		// CURSOR MOVE FLASH
+		// FLASH EFFECT
 		// ===========================================
 		new Setting(containerEl)
-			.setName('Cursor Move Flash')
+			.setName('Flash effect')
 			.setHeading();
 
 		new Setting(containerEl)
-			.setName('Flash')
+			.setName('Line highlight')
 			.setDesc('Show a gradient highlight on the current line during a flash')
 			.addDropdown(dropdown => dropdown
 				.addOption('off', 'Off')
@@ -99,8 +99,8 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				}));
 
 		const fadeDurationSetting = new Setting(containerEl)
-			.setName('Fade duration')
-			.setDesc(`How long the flash takes to fade out (0.2s - 1.5s) - ${(this.plugin.settings.lineDuration / 1000).toFixed(2)}s`)
+			.setName('Flash duration')
+			.setDesc(`How long the flash lasts (applies to line highlight and 'Only during flash' cursor) (0.2s - 1.5s) - ${(this.plugin.settings.lineDuration / 1000).toFixed(2)}s`)
 			.addSlider(slider => slider
 				.setLimits(0.2, 1.5, 0.05)
 				.setValue(this.plugin.settings.lineDuration / 1000)
@@ -108,7 +108,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				.onChange(async (value: number) => {
 					this.plugin.settings.lineDuration = Math.round(value * 1000);
 					this.plugin.settings.cursorDuration = Math.round(value * 1000);
-					fadeDurationSetting.setDesc(`How long the flash takes to fade out (0.2s - 1.5s) - ${value.toFixed(2)}s`);
+					fadeDurationSetting.setDesc(`How long the flash lasts (applies to line highlight and 'Only during flash' cursor) (0.2s - 1.5s) - ${value.toFixed(2)}s`);
 					await this.plugin.saveSettings();
 				}));
 
@@ -161,7 +161,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Use theme colors')
-			.setDesc('Based on your Obsidian theme\'s accent color')
+			.setDesc('Use theme\'s accent color. Turn off to pick custom colors.')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.useThemeColors)
 				.onChange(async (value) => {
@@ -181,7 +181,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 						this.plugin.refreshDecorations();
 					}));
-	
+
 			new Setting(containerEl)
 				.setName('Dark theme color')
 				.setDesc('Color for dark theme')

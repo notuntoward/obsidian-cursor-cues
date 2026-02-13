@@ -6,7 +6,7 @@
   "cursorColorDark": "#66ff70",
   "lineDuration": 600,
   "cursorDuration": 600,
-  "useThemeColors": false,
+  "useThemeColors": true,
   "flashOnWindowScrolls": true,
   "flashOnWindowChanges": true,
   "flashSize": 10,
