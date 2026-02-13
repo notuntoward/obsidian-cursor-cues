@@ -18,15 +18,15 @@
 
 /* Hide the native Obsidian cursor when custom cursor decorations are present */
 .cm-content:has(.cursor-flash-block-mark),
-.cm-content:has(.cursor-flash-thick-vertical),
+.cm-content:has(.cursor-flash-bar),
 .cm-line:has(.cursor-flash-block-mark),
-.cm-line:has(.cursor-flash-thick-vertical) {
+.cm-line:has(.cursor-flash-bar) {
   caret-color: transparent !important;
 }
 
 /* Hide CodeMirror's cursor layer when custom cursor is active */
 .cm-content:has(.cursor-flash-block-mark) .cm-cursorLayer,
-.cm-content:has(.cursor-flash-thick-vertical) .cm-cursorLayer {
+.cm-content:has(.cursor-flash-bar) .cm-cursorLayer {
   visibility: hidden !important;
 }
 
@@ -40,8 +40,8 @@
   color: var(--cursor-fg) !important;
 }
 
-/* Thick vertical line cursor - imitates standard Obsidian cursor with custom color */
-.cursor-flash-thick-vertical {
+/* Bar cursor - imitates standard Obsidian cursor with custom color */
+.cursor-flash-bar {
   pointer-events: none;
   contain: paint;
   will-change: opacity, transform;

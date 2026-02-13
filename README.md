@@ -1,6 +1,6 @@
 # Visible Cursor
 
-Never lose your cursor again! Smart visual cues for Obsidian with block cursor and intelligent highlighting.
+Never lose your cursor again! Options for more visible cursors plus configurable cursor flashes after movement.
 
 ![Plugin Demo](screenshots/demo.gif)
 *Flash effects help you track cursor movement across your notes*
@@ -8,9 +8,9 @@ Never lose your cursor again! Smart visual cues for Obsidian with block cursor a
 ## The Problem
 
 Obsidian's default cursor can be difficult to track when:
+
 - Scrolling through long documents
 - Switching between notes or panes
-- Using keyboard navigation (Home, End, Page Up/Down)
 - Working on large displays or with smaller text
 
 ## The Solution
@@ -20,21 +20,12 @@ Obsidian's default cursor can be difficult to track when:
 ![Before and After](screenshots/before-after.png)
 *Left: Default Obsidian cursor easily lost • Right: Visible Cursor with flash effect*
 
-## Features
-
-**Block Cursor Mode**: Real-time character highlighting using CodeMirror Decoration API  
-**Line Highlighting**: Left-aligned or cursor-centered gradients  
-**Theme-Aware Colors**: Uses Obsidian accent color by default, updates automatically  
-**Smart Detection**: Uses pixel distance to detect real cursor jumps  
-**Jump Key Support**: Flash on Home, End, Ctrl+Home, Ctrl+End, Ctrl+A, Ctrl+E  
-**End-of-Line Support**: Widget decoration renders visible block at line end
-
 ## Visual Examples
 
 ### Custom Cursor Styles
 
 ![Cursor Styles](screenshots/cursor-styles.png)
-*Choose between block cursor (left) or thick vertical cursor (right)*
+*Choose between block cursor (left) or bar cursor (right)*
 
 ### Line Highlight Options
 
@@ -60,7 +51,7 @@ Download the latest release from the [GitHub releases page](https://github.com/n
 
 **Custom cursor style**
 - "Block" - Full character highlight
-- "Thick vertical" - 3px wide cursor line
+- "Bar" - 3px wide cursor line
 
 ### Flash Effect
 

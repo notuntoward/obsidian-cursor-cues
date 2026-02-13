@@ -4,15 +4,15 @@ import { RangeSetBuilder } from '@codemirror/state';
 import { VisibleCursorPluginSettings, DEFAULT_SETTINGS, VisibleCursorSettingTab } from './settings';
 
 class EndOfLineWidget extends WidgetType {
-	constructor(private markerColor: string, private contrastColor: string, private style: 'block' | 'thick-vertical' = 'block', private lineHeight?: number) {
+	constructor(private markerColor: string, private contrastColor: string, private style: 'block' | 'bar' = 'block', private lineHeight?: number) {
 		super();
 	}
 	toDOM() {
 		const span = document.createElement('span');
 		span.textContent = ' ';
 		
-		if (this.style === 'thick-vertical') {
-			span.className = 'cursor-flash-thick-vertical';
+		if (this.style === 'bar') {
+			span.className = 'cursor-flash-bar';
 			const heightStyle = this.lineHeight ? `height: ${this.lineHeight}px;` : 'height: 1em;';
 			span.style.cssText = `
 				display: inline-block;
@@ -37,13 +37,13 @@ class EndOfLineWidget extends WidgetType {
 	}
 }
 
-class VerticalCursorWidget extends WidgetType {
+class BarCursorWidget extends WidgetType {
 	constructor(private markerColor: string, private lineHeight: number) {
 		super();
 	}
 	toDOM() {
 		const span = document.createElement('span');
-		span.className = 'cursor-flash-thick-vertical';
+		span.className = 'cursor-flash-bar';
 		span.style.cssText = `
 			display: inline-block;
 			width: 3px;
@@ -140,8 +140,8 @@ export default class VisibleCursorPlugin extends Plugin {
 					return builder.finish() as DecorationSet;
 				}
 
-				const showAlwaysOn = plugin.settings.blockCursorMode === 'always';
-				const showFlash = plugin.settings.blockCursorMode === 'flash' && plugin.flashActive;
+				const showAlwaysOn = plugin.settings.customCursorMode === 'always';
+				const showFlash = plugin.settings.customCursorMode === 'flash' && plugin.flashActive;
 				const shouldShowCursor = showAlwaysOn || showFlash;
 
 				if (!shouldShowCursor) {
@@ -181,7 +181,7 @@ export default class VisibleCursorPlugin extends Plugin {
 
 				if (pos >= view.state.doc.length) {
 					if (view.state.doc.length > 0) {
-						const widgetStyle = plugin.settings.blockCursorStyle === 'thick-vertical' ? 'thick-vertical' : 'block';
+					const widgetStyle = plugin.settings.customCursorStyle === 'bar' ? 'bar' : 'block';
 						const widget = Decoration.widget({
 							widget: new EndOfLineWidget(markerColor, contrastColor, widgetStyle, actualLineHeight),
 							side: 1
@@ -191,17 +191,17 @@ export default class VisibleCursorPlugin extends Plugin {
 				} else {
 					const char = view.state.doc.sliceString(pos, pos + 1);
 					if (char === '\n' || char === '') {
-						const widgetStyle = plugin.settings.blockCursorStyle === 'thick-vertical' ? 'thick-vertical' : 'block';
+						const widgetStyle = plugin.settings.customCursorStyle === 'bar' ? 'bar' : 'block';
 						const widget = Decoration.widget({
 							widget: new EndOfLineWidget(markerColor, contrastColor, widgetStyle, actualLineHeight),
 							side: 1
 						});
 						builder.add(pos, pos, widget);
 					} else {
-						if (plugin.settings.blockCursorStyle === 'thick-vertical') {
-							// Use a widget positioned before the character for vertical cursor
+						if (plugin.settings.customCursorStyle === 'bar') {
+							// Use a widget positioned before the character for bar cursor
 							const widget = Decoration.widget({
-								widget: new VerticalCursorWidget(markerColor, actualLineHeight),
+								widget: new BarCursorWidget(markerColor, actualLineHeight),
 								side: 0
 							});
 							builder.add(pos, pos, widget);
@@ -313,16 +313,16 @@ export default class VisibleCursorPlugin extends Plugin {
 			clearTimeout(this.resetFlashTimeout);
 		}
 
-		// Only dispatch when blockCursorMode is 'flash' (to toggle the decoration).
+		// Only dispatch when customCursorMode is 'flash' (to toggle the decoration).
 		// Allow dispatch during click fence for view-change/layout-change triggers.
 		const isViewFlashTrigger = this.pendingFlashTrigger === 'view-change' || this.pendingFlashTrigger === 'layout-change';
-		if (this.settings.blockCursorMode === 'flash') {
+		if (this.settings.customCursorMode === 'flash') {
 			if (isViewFlashTrigger || !this.clickFenceActive) { editorView.dispatch({}); }
 		}
 
 		this.resetFlashTimeout = setTimeout(() => {
 			this.flashActive = false;
-			if (this.settings.blockCursorMode === 'flash') {
+			if (this.settings.customCursorMode === 'flash') {
 				editorView.dispatch({});
 			}
 		}, this.settings.lineDuration);
@@ -477,10 +477,16 @@ export default class VisibleCursorPlugin extends Plugin {
 			let accentColor = getComputedStyle(document.body)
 				.getPropertyValue('--interactive-accent').trim();
 
-			// For light theme, use color-mix to create a much lighter version
+			// For light theme, use color-mix to adjust the color
 			if (!isDark && accentColor) {
-				// Mix 25% of accent color with 75% white to create a very light tint
-				accentColor = `color-mix(in srgb, ${accentColor} 25%, white)`;
+				// For bar cursor on light theme, use a stronger color for visibility
+				if (this.settings.customCursorStyle === 'bar') {
+					// Mix 60% of accent color with 40% white for better visibility
+					accentColor = `color-mix(in srgb, ${accentColor} 60%, white)`;
+				} else {
+					// For block cursor, use a very light tint (25% accent, 75% white)
+					accentColor = `color-mix(in srgb, ${accentColor} 25%, white)`;
+				}
 			}
 
 			return { color: accentColor || '#6496ff', opacity: 0.8 };
@@ -556,9 +562,9 @@ export default class VisibleCursorPlugin extends Plugin {
 			}
 		`;
 		
-		if (this.settings.blockCursorStyle === 'thick-vertical') {
+		if (this.settings.customCursorStyle === 'bar') {
 			styleContent += `
-			.cursor-flash-thick-vertical {
+			.cursor-flash-bar {
 				background: linear-gradient(90deg, ${markerColor} 0px, ${markerColor} 3px, transparent 3px) !important;
 			}
 			`;
@@ -598,6 +604,23 @@ export default class VisibleCursorPlugin extends Plugin {
 
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		// Migrate old setting names and values
+		const anySettings = this.settings as any;
+		// Migrate 'blockCursorMode' to 'customCursorMode'
+		if (anySettings.blockCursorMode !== undefined && anySettings.customCursorMode === undefined) {
+			anySettings.customCursorMode = anySettings.blockCursorMode;
+			delete anySettings.blockCursorMode;
+		}
+		// Migrate 'blockCursorStyle' to 'customCursorStyle'
+		if (anySettings.blockCursorStyle !== undefined && anySettings.customCursorStyle === undefined) {
+			anySettings.customCursorStyle = anySettings.blockCursorStyle;
+			delete anySettings.blockCursorStyle;
+		}
+		// Migrate old 'thick-vertical' setting value to 'bar'
+		if (anySettings.customCursorStyle === 'thick-vertical') {
+			anySettings.customCursorStyle = 'bar';
+		}
+		await this.saveSettings();
 	}
 
 	async saveSettings() {

@@ -3,8 +3,8 @@ import { App, PluginSettingTab, Setting } from 'obsidian';
 import VisibleCursorPlugin from './main';
 
 export interface VisibleCursorPluginSettings {
-	blockCursorMode: 'always' | 'flash' | 'off';
-	blockCursorStyle: 'block' | 'thick-vertical';
+	customCursorMode: 'always' | 'flash' | 'off';
+	customCursorStyle: 'block' | 'bar';
 	lineHighlightMode: 'left' | 'centered' | 'right' | 'off';
 	cursorColorLight: string;
 	cursorColorDark: string;
@@ -17,8 +17,8 @@ export interface VisibleCursorPluginSettings {
 }
 
 export const DEFAULT_SETTINGS: VisibleCursorPluginSettings = {
-	blockCursorMode: 'always',
-	blockCursorStyle: 'block',
+	customCursorMode: 'always',
+	customCursorStyle: 'block',
 	lineHighlightMode: 'centered',
 	cursorColorLight: '#6496ff',
 	cursorColorDark: '#6496ff',
@@ -56,9 +56,9 @@ export class VisibleCursorSettingTab extends PluginSettingTab {
 				.addOption('always', 'Always on')
 				.addOption('flash', 'Only during flash')
 				.addOption('off', 'Off (use Obsidian default cursor)')
-				.setValue(this.plugin.settings.blockCursorMode)
+				.setValue(this.plugin.settings.customCursorMode)
 				.onChange(async (value: 'always' | 'flash' | 'off') => {
-					this.plugin.settings.blockCursorMode = value;
+					this.plugin.settings.customCursorMode = value;
 					await this.plugin.saveSettings();
 					this.plugin.refreshDecorations();
 				}));
@@ -68,10 +68,10 @@ export class VisibleCursorSettingTab extends PluginSettingTab {
 			.setDesc('Visual style of the custom cursor')
 			.addDropdown(dropdown => dropdown
 				.addOption('block', 'Block')
-				.addOption('thick-vertical', 'Thick vertical')
-				.setValue(this.plugin.settings.blockCursorStyle)
-				.onChange(async (value: 'block' | 'thick-vertical') => {
-					this.plugin.settings.blockCursorStyle = value;
+				.addOption('bar', 'Bar')
+				.setValue(this.plugin.settings.customCursorStyle)
+				.onChange(async (value: 'block' | 'bar') => {
+					this.plugin.settings.customCursorStyle = value;
 					await this.plugin.saveSettings();
 					this.plugin.refreshDecorations();
 				}));
