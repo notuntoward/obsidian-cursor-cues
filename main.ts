@@ -1,7 +1,7 @@
 import { Plugin, MarkdownView } from 'obsidian';
 import { EditorView, ViewPlugin, ViewUpdate, Decoration, DecorationSet, WidgetType } from '@codemirror/view';
 import { RangeSetBuilder } from '@codemirror/state';
-import { CursorCuesPluginSettings, DEFAULT_SETTINGS, CursorCuesSettingTab } from './settings';
+import { VisibleCursorPluginSettings, DEFAULT_SETTINGS, VisibleCursorSettingTab } from './settings';
 
 class EndOfLineWidget extends WidgetType {
 	constructor(private markerColor: string, private contrastColor: string, private style: 'block' | 'thick-vertical' = 'block', private lineHeight?: number) {
@@ -12,14 +12,16 @@ class EndOfLineWidget extends WidgetType {
 		span.textContent = ' ';
 		
 		if (this.style === 'thick-vertical') {
+			span.className = 'cursor-flash-thick-vertical';
 			const heightStyle = this.lineHeight ? `height: ${this.lineHeight}px;` : 'height: 1em;';
 			span.style.cssText = `
 				display: inline-block;
-				width: 3px;
+				width: 4px;
 				${heightStyle}
 				background-color: ${this.markerColor};
 				pointer-events: none;
 				vertical-align: text-bottom;
+				margin-left: -1px;
 			`;
 		} else {
 			span.style.cssText = `
@@ -41,6 +43,7 @@ class VerticalCursorWidget extends WidgetType {
 	}
 	toDOM() {
 		const span = document.createElement('span');
+		span.className = 'cursor-flash-thick-vertical';
 		span.style.cssText = `
 			display: inline-block;
 			width: 3px;
@@ -49,6 +52,7 @@ class VerticalCursorWidget extends WidgetType {
 			pointer-events: none;
 			vertical-align: text-bottom;
 			position: relative;
+			margin-left: -1px;
 			z-index: 1;
 		`;
 		span.setAttribute('aria-hidden', 'true');
@@ -56,26 +60,26 @@ class VerticalCursorWidget extends WidgetType {
 	}
 }
 
-export default class CursorCuesPlugin extends Plugin {
-	settings: CursorCuesPluginSettings;
+export default class VisibleCursorPlugin extends Plugin {
+	settings: VisibleCursorPluginSettings;
 	private styleElement: HTMLStyleElement | null = null;
 
 	private lastViewChange: number = 0;
-	private cueTimeout: NodeJS.Timeout | null = null;
-	private resetCueTimeout: NodeJS.Timeout | null = null;
+	private flashTimeout: NodeJS.Timeout | null = null;
+	private resetFlashTimeout: NodeJS.Timeout | null = null;
 	private scrollDebounceTimer: NodeJS.Timeout | null = null;
 	private lastScrollPosition: number = 0;
-	private cueFlashActive: boolean = false;
+	private flashActive: boolean = false;
 	private decorationView: EditorView | null = null;
 	private clickFenceActive: boolean = false;
-	private pendingCueTrigger: string | null = null;
-	private scrollCueSuppressedUntil: number = 0;
+	private pendingFlashTrigger: string | null = null;
+	private scrollFlashSuppressedUntil: number = 0;
 
 	async onload() {
 		await this.loadSettings();
-		this.addSettingTab(new CursorCuesSettingTab(this.app, this));
+		this.addSettingTab(new VisibleCursorSettingTab(this.app, this));
 
-		const decorationPlugin = this.createCueDecorationPlugin();
+		const decorationPlugin = this.createDecorationPlugin();
 		this.registerEditorExtension([
 			decorationPlugin,
 			this.createDOMEventHandlers()
@@ -84,7 +88,7 @@ export default class CursorCuesPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
 				if (this.settings.flashOnWindowChanges) {
-					requestAnimationFrame(() => requestAnimationFrame(() => this.scheduleCue('view-change', false)));
+						requestAnimationFrame(() => requestAnimationFrame(() => this.scheduleFlash('view-change', false)));
 				}
 			})
 		);
@@ -92,7 +96,7 @@ export default class CursorCuesPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('layout-change', () => {
 				if (this.settings.flashOnWindowChanges) {
-					requestAnimationFrame(() => requestAnimationFrame(() => this.scheduleCue('layout-change', false)));
+					requestAnimationFrame(() => requestAnimationFrame(() => this.scheduleFlash('layout-change', false)));
 				}
 			})
 		);
@@ -103,7 +107,7 @@ export default class CursorCuesPlugin extends Plugin {
 			})
 		);
 
-		// Global click fence: block cue work during pointer->click and a short tail
+		// Global click fence: block flash work during pointer->click and a short tail
 		const startFence = () => { this.clickFenceActive = true; };
 		const endFenceSoon = () => { setTimeout(() => { this.clickFenceActive = false; }, 400); };
 		window.addEventListener('pointerdown', startFence, { capture: true });
@@ -112,7 +116,7 @@ export default class CursorCuesPlugin extends Plugin {
 		window.addEventListener('click', () => { endFenceSoon(); }, { capture: true });
 	}
 
-	createCueDecorationPlugin() {
+	createDecorationPlugin() {
 		const plugin = this;
 		return ViewPlugin.fromClass(class {
 			decorations: DecorationSet;
@@ -133,7 +137,7 @@ export default class CursorCuesPlugin extends Plugin {
 				}
 
 				const showAlwaysOn = plugin.settings.blockCursorMode === 'always';
-				const showFlash = plugin.settings.blockCursorMode === 'flash' && plugin.cueFlashActive;
+				const showFlash = plugin.settings.blockCursorMode === 'flash' && plugin.flashActive;
 				const shouldShowCursor = showAlwaysOn || showFlash;
 
 				if (!shouldShowCursor) {
@@ -141,7 +145,7 @@ export default class CursorCuesPlugin extends Plugin {
 				}
 
 				const pos = view.state.selection.main.head;
-				const markerColor = plugin.getCueColor().color;
+				const markerColor = plugin.getColor().color;
 				const contrastColor = plugin.getContrastColor(markerColor);
 				plugin.updateCursorStyles(markerColor, contrastColor);
 
@@ -201,7 +205,7 @@ export default class CursorCuesPlugin extends Plugin {
 							// Use mark decoration for block cursor
 							const decoration = Decoration.mark({
 								attributes: {
-									class: 'cursor-cues-block-mark',
+									class: 'cursor-flash-block-mark',
 								}
 							});
 							builder.add(pos, pos + 1, decoration);
@@ -212,7 +216,7 @@ export default class CursorCuesPlugin extends Plugin {
 				return builder.finish() as DecorationSet;
 			}
 		}, {
-			decorations: v => v.decorations
+			decorations: (v: any) => v.decorations
 		});
 	}
 
@@ -227,12 +231,12 @@ export default class CursorCuesPlugin extends Plugin {
 				const scrollDelta = Math.abs(currentScrollPos - plugin.lastScrollPosition);
 				plugin.lastScrollPosition = currentScrollPos;
 
-				// While a cue is active (or was recently shown), keep extending the
+				// While a flash is active (or was recently shown), keep extending the
 				// suppression window and cancel any pending debounce.  This prevents
 				// momentum / inertial scrolling from triggering a second flash.
 				const now = Date.now();
-				if (plugin.cueFlashActive || now < plugin.scrollCueSuppressedUntil) {
-					plugin.scrollCueSuppressedUntil = now + 300;
+				if (plugin.flashActive || now < plugin.scrollFlashSuppressedUntil) {
+					plugin.scrollFlashSuppressedUntil = now + 300;
 					if (plugin.scrollDebounceTimer) {
 						clearTimeout(plugin.scrollDebounceTimer);
 						plugin.scrollDebounceTimer = null;
@@ -246,7 +250,7 @@ export default class CursorCuesPlugin extends Plugin {
 
 				const debounceTime = scrollDelta < 5 ? 250 : 150;
 				plugin.scrollDebounceTimer = setTimeout(() => {
-					plugin.scheduleCue('scroll', false);
+					plugin.scheduleFlash('scroll', false);
 					plugin.scrollDebounceTimer = null;
 				}, debounceTime);
 
@@ -255,72 +259,72 @@ export default class CursorCuesPlugin extends Plugin {
 		});
 	}
 
-	scheduleCue(trigger: string, isMouseClick: boolean) {
+	scheduleFlash(trigger: string, isMouseClick: boolean) {
 		if (isMouseClick) return;
 		const isViewTrigger = trigger === 'view-change' || trigger === 'layout-change';
 		// View/layout triggers bypass click fence because
 		// switching notes inherently involves a click.
 		if (!isViewTrigger && this.clickFenceActive) return;
-		if (this.cueFlashActive || this.pendingCueTrigger) return;
+		if (this.flashActive || this.pendingFlashTrigger) return;
 		const now = Date.now();
 		if (now - this.lastViewChange < 100) return;
 
 		this.lastViewChange = now;
-		if (this.cueTimeout) {
-			clearTimeout(this.cueTimeout);
+		if (this.flashTimeout) {
+			clearTimeout(this.flashTimeout);
 		}
 
-		this.pendingCueTrigger = trigger;
-		this.cueTimeout = setTimeout(() => {
-			this.showCue();
-			this.pendingCueTrigger = null;
+		this.pendingFlashTrigger = trigger;
+		this.flashTimeout = setTimeout(() => {
+			this.showFlash();
+			this.pendingFlashTrigger = null;
 		}, 50);
 	}
 
-	showCue() {
+	showFlash() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view || !view.editor) return;
 
 		const editorView = (view.editor as any).cm as EditorView;
 		if (!editorView) return;
 
-		// Cancel any pending scroll debounce so it can't fire after this cue
+		// Cancel any pending scroll debounce so it can't fire after this flash
 		if (this.scrollDebounceTimer) {
 			clearTimeout(this.scrollDebounceTimer);
 			this.scrollDebounceTimer = null;
 		}
 
 		if (this.settings.lineHighlightMode === 'left') {
-			this.showLineCue(editorView);
+			this.showLineFlash(editorView);
 		} else if (this.settings.lineHighlightMode === 'centered') {
-			this.showCursorCenteredCue(editorView);
+			this.showCursorCenteredFlash(editorView);
 		} else if (this.settings.lineHighlightMode === 'right') {
-			this.showLineCueRightToLeft(editorView);
+			this.showLineFlashRightToLeft(editorView);
 		}
 
-		// Always set cueFlashActive as a cooldown guard to prevent
-		// double-triggering (e.g. scroll → showCue → layout shift → scroll)
-		this.cueFlashActive = true;
-		if (this.resetCueTimeout) {
-			clearTimeout(this.resetCueTimeout);
+		// Always set flashActive as a cooldown guard to prevent
+		// double-triggering (e.g. scroll → showFlash → layout shift → scroll)
+		this.flashActive = true;
+		if (this.resetFlashTimeout) {
+			clearTimeout(this.resetFlashTimeout);
 		}
 
 		// Only dispatch when blockCursorMode is 'flash' (to toggle the decoration).
 		// Allow dispatch during click fence for view-change/layout-change triggers.
-		const isViewCueTrigger = this.pendingCueTrigger === 'view-change' || this.pendingCueTrigger === 'layout-change';
+		const isViewFlashTrigger = this.pendingFlashTrigger === 'view-change' || this.pendingFlashTrigger === 'layout-change';
 		if (this.settings.blockCursorMode === 'flash') {
-			if (isViewCueTrigger || !this.clickFenceActive) { editorView.dispatch({}); }
+			if (isViewFlashTrigger || !this.clickFenceActive) { editorView.dispatch({}); }
 		}
 
-		this.resetCueTimeout = setTimeout(() => {
-			this.cueFlashActive = false;
+		this.resetFlashTimeout = setTimeout(() => {
+			this.flashActive = false;
 			if (this.settings.blockCursorMode === 'flash') {
 				editorView.dispatch({});
 			}
 		}, this.settings.lineDuration);
 	}
 
-	showLineCue(editorView: EditorView) {
+	showLineFlash(editorView: EditorView) {
 		const cursor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
 		if (!cursor) return;
 
@@ -331,7 +335,7 @@ export default class CursorCuesPlugin extends Plugin {
 		const editorElement = editorView.contentDOM;
 		const editorRect = editorElement.getBoundingClientRect();
 		const lineHeight = editorView.defaultLineHeight;
-		const { color, opacity } = this.getCueColor();
+		const { color, opacity } = this.getColor();
 		const rgb = this.hexToRgb(color);
 		// Calculate highlight distance based on flashSize setting (in character widths)
 		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
@@ -340,7 +344,7 @@ export default class CursorCuesPlugin extends Plugin {
 		const highlightPercent = Math.min(100, (highlightDistance / editorRect.width) * 100);
 
 		const lineHighlight = document.createElement('div');
-		lineHighlight.className = 'obsidian-cue-line';
+		lineHighlight.className = 'obsidian-flash-line';
 		lineHighlight.style.cssText = `
 		position: fixed;
 		left: ${editorRect.left}px;
@@ -355,7 +359,7 @@ export default class CursorCuesPlugin extends Plugin {
 		);
 		pointer-events: none;
 		z-index: 1;
-		animation: cue-line-fade ${this.settings.lineDuration}ms ease-out;
+		animation: flash-line-fade ${this.settings.lineDuration}ms ease-out;
 		`;
 
 		document.body.appendChild(lineHighlight);
@@ -364,7 +368,7 @@ export default class CursorCuesPlugin extends Plugin {
 		}, this.settings.lineDuration);
 	}
 
-	showLineCueRightToLeft(editorView: EditorView) {
+	showLineFlashRightToLeft(editorView: EditorView) {
 		const cursor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
 		if (!cursor) return;
 
@@ -375,7 +379,7 @@ export default class CursorCuesPlugin extends Plugin {
 		const editorElement = editorView.contentDOM;
 		const editorRect = editorElement.getBoundingClientRect();
 		const lineHeight = editorView.defaultLineHeight;
-		const { color, opacity } = this.getCueColor();
+		const { color, opacity } = this.getColor();
 		const rgb = this.hexToRgb(color);
 		// Calculate highlight distance based on flashSize setting (in character widths)
 		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
@@ -384,7 +388,7 @@ export default class CursorCuesPlugin extends Plugin {
 		const highlightPercent = Math.min(100, (highlightDistance / editorRect.width) * 100);
 
 		const lineHighlight = document.createElement('div');
-		lineHighlight.className = 'obsidian-cue-line';
+		lineHighlight.className = 'obsidian-flash-line';
 		lineHighlight.style.cssText = `
 		position: fixed;
 		left: ${editorRect.left}px;
@@ -399,7 +403,7 @@ export default class CursorCuesPlugin extends Plugin {
 		);
 		pointer-events: none;
 		z-index: 1;
-		animation: cue-line-fade ${this.settings.lineDuration}ms ease-out;
+		animation: flash-line-fade ${this.settings.lineDuration}ms ease-out;
 		`;
 
 		document.body.appendChild(lineHighlight);
@@ -408,7 +412,7 @@ export default class CursorCuesPlugin extends Plugin {
 		}, this.settings.lineDuration);
 	}
 
-	showCursorCenteredCue(editorView: EditorView) {
+	showCursorCenteredFlash(editorView: EditorView) {
 		const cursor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
 		if (!cursor) return;
 
@@ -422,11 +426,11 @@ export default class CursorCuesPlugin extends Plugin {
 		const cursorX = coords.left - editorRect.left;
 		const editorWidth = editorRect.width;
 		const cursorPercent = (cursorX / editorWidth) * 100;
-		const { color, opacity } = this.getCueColor();
+		const { color, opacity } = this.getColor();
 		const rgb = this.hexToRgb(color);
 
 		const lineHighlight = document.createElement('div');
-		lineHighlight.className = 'obsidian-cue-cursor-line';
+		lineHighlight.className = 'obsidian-flash-cursor-line';
 		const peakOpacity = opacity;
 		const fadeOpacity = opacity * 0.75;
 		// Calculate spread distance based on flashSize setting (in character widths)
@@ -454,7 +458,7 @@ export default class CursorCuesPlugin extends Plugin {
 		);
 		pointer-events: none;
 		z-index: 1;
-		animation: cue-line-fade ${this.settings.lineDuration}ms ease-out;
+		animation: flash-line-fade ${this.settings.lineDuration}ms ease-out;
 		`;
 
 		document.body.appendChild(lineHighlight);
@@ -463,7 +467,7 @@ export default class CursorCuesPlugin extends Plugin {
 		}, this.settings.lineDuration);
 	}
 
-	getCueColor(): { color: string, opacity: number } {
+	getColor(): { color: string, opacity: number } {
 		const isDark = document.body.classList.contains('theme-dark');
 		if (this.settings.useThemeColors) {
 			let accentColor = getComputedStyle(document.body)
@@ -542,10 +546,10 @@ export default class CursorCuesPlugin extends Plugin {
 		}
 		
 		this.styleElement = document.createElement('style');
-		this.styleElement.id = 'cursor-cues-dynamic-styles';
+		this.styleElement.id = 'cursor-flash-dynamic-styles';
 		
 		let styleContent = `
-			.cursor-cues-block-mark {
+			.cursor-flash-block-mark {
 				background-color: ${markerColor} !important;
 				color: ${contrastColor} !important;
 			}
@@ -553,7 +557,7 @@ export default class CursorCuesPlugin extends Plugin {
 		
 		if (this.settings.blockCursorStyle === 'thick-vertical') {
 			styleContent += `
-			.cursor-cues-thick-vertical {
+			.cursor-flash-thick-vertical {
 				background: linear-gradient(90deg, ${markerColor} 0px, ${markerColor} 3px, transparent 3px) !important;
 			}
 			`;
@@ -601,14 +605,14 @@ export default class CursorCuesPlugin extends Plugin {
 	}
 
 	onunload() {
-		if (this.cueTimeout) {
+		if (this.flashTimeout) {
 			if (this.styleElement) {
 				this.styleElement.remove();
 			}
-			clearTimeout(this.cueTimeout);
+			clearTimeout(this.flashTimeout);
 		}
-		if (this.resetCueTimeout) {
-			clearTimeout(this.resetCueTimeout);
+		if (this.resetFlashTimeout) {
+			clearTimeout(this.resetFlashTimeout);
 		}
 		if (this.scrollDebounceTimer) {
 			clearTimeout(this.scrollDebounceTimer);

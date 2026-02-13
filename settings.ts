@@ -1,8 +1,8 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 
-import CursorCuesPlugin from './main';
+import VisibleCursorPlugin from './main';
 
-export interface CursorCuesPluginSettings {
+export interface VisibleCursorPluginSettings {
 	blockCursorMode: 'always' | 'flash' | 'off';
 	blockCursorStyle: 'block' | 'thick-vertical';
 	lineHighlightMode: 'left' | 'centered' | 'right' | 'off';
@@ -16,7 +16,7 @@ export interface CursorCuesPluginSettings {
 	flashSize: number;
 }
 
-export const DEFAULT_SETTINGS: CursorCuesPluginSettings = {
+export const DEFAULT_SETTINGS: VisibleCursorPluginSettings = {
 	blockCursorMode: 'always',
 	blockCursorStyle: 'block',
 	lineHighlightMode: 'centered',
@@ -30,10 +30,10 @@ export const DEFAULT_SETTINGS: CursorCuesPluginSettings = {
 	flashSize: 8
 }
 
-export class CursorCuesSettingTab extends PluginSettingTab {
-	plugin: CursorCuesPlugin;
+export class VisibleCursorSettingTab extends PluginSettingTab {
+	plugin: VisibleCursorPlugin;
 
-	constructor(app: App, plugin: CursorCuesPlugin) {
+	constructor(app: App, plugin: VisibleCursorPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -46,7 +46,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 		// CURSOR APPEARANCE
 		// ===========================================
 		new Setting(containerEl)
-			.setName('Cursor appearance')
+			.setName('Cursor Appearance')
 			.setHeading();
 
 		new Setting(containerEl)
@@ -64,7 +64,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Custom Cursor Shape')
+			.setName('Custom cursor style')
 			.setDesc('Visual style of the custom cursor')
 			.addDropdown(dropdown => dropdown
 				.addOption('block', 'Block')
@@ -80,7 +80,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 		// FLASH EFFECT
 		// ===========================================
 		new Setting(containerEl)
-			.setName('Flash effect')
+			.setName('Flash Effect')
 			.setHeading();
 
 		new Setting(containerEl)

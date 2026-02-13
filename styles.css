@@ -1,5 +1,5 @@
 /* Line highlight beacon animation - fades out smoothly */
-@keyframes cue-line-fade {
+@keyframes flash-line-fade {
 	0% {
 		opacity: 1;
 	}
@@ -11,21 +11,27 @@
 	}
 }
 
-.obsidian-cue-line,
-.obsidian-cue-cursor-line {
+.obsidian-flash-line,
+.obsidian-flash-cursor-line {
   pointer-events: none; /* ensure overlays never catch clicks */
 }
 
 /* Hide the native Obsidian cursor when custom cursor decorations are present */
-.cm-content:has(.cursor-cues-block-mark),
-.cm-content:has(.cursor-cues-thick-vertical),
-.cm-line:has(.cursor-cues-block-mark),
-.cm-line:has(.cursor-cues-thick-vertical) {
+.cm-content:has(.cursor-flash-block-mark),
+.cm-content:has(.cursor-flash-thick-vertical),
+.cm-line:has(.cursor-flash-block-mark),
+.cm-line:has(.cursor-flash-thick-vertical) {
   caret-color: transparent !important;
 }
 
+/* Hide CodeMirror's cursor layer when custom cursor is active */
+.cm-content:has(.cursor-flash-block-mark) .cm-cursorLayer,
+.cm-content:has(.cursor-flash-thick-vertical) .cm-cursorLayer {
+  visibility: hidden !important;
+}
+
 /* Make block cursor overlay click-through too */
-.cursor-cues-block-mark {
+.cursor-flash-block-mark {
   pointer-events: none;
   contain: paint;
   will-change: opacity, transform;
@@ -35,7 +41,7 @@
 }
 
 /* Thick vertical line cursor - imitates standard Obsidian cursor with custom color */
-.cursor-cues-thick-vertical {
+.cursor-flash-thick-vertical {
   pointer-events: none;
   contain: paint;
   will-change: opacity, transform;
@@ -44,7 +50,7 @@
   background-color: transparent !important;
 }
 
-@keyframes cue-char-fade {
+@keyframes flash-char-fade {
 	0% {
 		opacity: 0.9;
 	}
@@ -55,7 +61,7 @@
 		opacity: 0;
 	}
 }
-.obsidian-cue-line, .obsidian-cue-cursor-line {
+.obsidian-flash-line, .obsidian-flash-cursor-line {
   pointer-events: none;
   contain: paint;
   will-change: opacity, transform;

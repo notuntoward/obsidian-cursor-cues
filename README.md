@@ -1,4 +1,4 @@
-# Cursor Cues
+# Visible Cursor
 
 Never lose your cursor again! Smart visual cues for Obsidian with block cursor and intelligent highlighting.
 
@@ -25,9 +25,9 @@ Never lose your cursor again! Smart visual cues for Obsidian with block cursor a
 
 ## Installation
 
-Download latest release → Extract to `.obsidian/plugins/cursor-cues/` → Reload
+Download latest release → Extract to `.obsidian/plugins/visible-cursor/` → Reload
 
-Or install from Community Plugins (search "Cursor Cues").
+Or install from Community Plugins (search "Visible Cursor").
 
 ## Settings Guide
 
@@ -69,7 +69,7 @@ Or install from Community Plugins (search "Cursor Cues").
 - **New**: Flash after cursor jump keys (Home, End, Ctrl+Home, Ctrl+End, Ctrl+A, Ctrl+E)
 - **Renamed**: "blink on cursor jumps" → "Flash on long single move repeats"
 - **Fixed**: Arrow keys now properly trigger flashes
-- **Renamed**: Plugin name: "Obsidian Beacon" → "Cursor Cues"
+- **Renamed**: Plugin name: "Obsidian Beacon" → "Visible Cursor"
 - **Replaced**: All "beacon" references with "cue"
 - **Replaced**: All "blink" references with "flash"
 
