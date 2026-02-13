@@ -60,7 +60,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				.onChange(async (value: 'always' | 'flash' | 'off') => {
 					this.plugin.settings.blockCursorMode = value;
 					await this.plugin.saveSettings();
-					this.display();
+					this.plugin.refreshDecorations();
 				}));
 
 		new Setting(containerEl)
@@ -73,7 +73,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				.onChange(async (value: 'block' | 'thick-vertical') => {
 					this.plugin.settings.blockCursorStyle = value;
 					await this.plugin.saveSettings();
-					this.display();
+					this.plugin.refreshDecorations();
 				}));
 
 		// ===========================================
@@ -95,7 +95,6 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				.onChange(async (value: 'left' | 'centered' | 'right' | 'off') => {
 					this.plugin.settings.lineHighlightMode = value;
 					await this.plugin.saveSettings();
-					this.display();
 				}));
 
 		const fadeDurationSetting = new Setting(containerEl)
