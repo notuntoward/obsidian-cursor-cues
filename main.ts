@@ -74,6 +74,9 @@ export default class VisibleCursorPlugin extends Plugin {
 	private clickFenceActive: boolean = false;
 	private pendingFlashTrigger: string | null = null;
 	private scrollFlashSuppressedUntil: number = 0;
+	private boundStartFence: () => void;
+	private boundEndFenceSoon: () => void;
+	private boundClickEndFence: () => void;
 
 	async onload() {
 		await this.loadSettings();
@@ -108,12 +111,13 @@ export default class VisibleCursorPlugin extends Plugin {
 		);
 
 		// Global click fence: block flash work during pointer->click and a short tail
-		const startFence = () => { this.clickFenceActive = true; };
-		const endFenceSoon = () => { setTimeout(() => { this.clickFenceActive = false; }, 400); };
-		window.addEventListener('pointerdown', startFence, { capture: true });
-		window.addEventListener('pointerup', endFenceSoon, { capture: true });
-		window.addEventListener('pointercancel', endFenceSoon, { capture: true });
-		window.addEventListener('click', () => { endFenceSoon(); }, { capture: true });
+		this.boundStartFence = () => { this.clickFenceActive = true; };
+		this.boundEndFenceSoon = () => { setTimeout(() => { this.clickFenceActive = false; }, 400); };
+		this.boundClickEndFence = () => { this.boundEndFenceSoon(); };
+		window.addEventListener('pointerdown', this.boundStartFence, { capture: true });
+		window.addEventListener('pointerup', this.boundEndFenceSoon, { capture: true });
+		window.addEventListener('pointercancel', this.boundEndFenceSoon, { capture: true });
+		window.addEventListener('click', this.boundClickEndFence, { capture: true });
 	}
 
 	createDecorationPlugin() {
@@ -477,7 +481,6 @@ export default class VisibleCursorPlugin extends Plugin {
 			if (!isDark && accentColor) {
 				// Mix 25% of accent color with 75% white to create a very light tint
 				accentColor = `color-mix(in srgb, ${accentColor} 25%, white)`;
-				console.log(`Light theme: Using lightened accent color: ${accentColor}`);
 			}
 
 			return { color: accentColor || '#6496ff', opacity: 0.8 };
@@ -535,12 +538,10 @@ export default class VisibleCursorPlugin extends Plugin {
 		
 		// Choose whichever has the highest contrast
 		const selectedColor = textContrast > bgContrast ? textColor : bgColor;
-		console.log(`Cursor color ${hexColor}: bg contrast=${bgContrast.toFixed(2)}, text contrast=${textContrast.toFixed(2)}, choosing ${textContrast > bgContrast ? 'TEXT' : 'BG'} (${selectedColor})`);
 		return selectedColor;
 	}
 
 	private updateCursorStyles(markerColor: string, contrastColor: string): void {
-		console.log(`updateCursorStyles called: bg=${markerColor}, fg=${contrastColor}`);
 		if (this.styleElement) {
 			this.styleElement.remove();
 		}
@@ -565,7 +566,6 @@ export default class VisibleCursorPlugin extends Plugin {
 		
 		this.styleElement.textContent = styleContent;
 		document.head.appendChild(this.styleElement);
-		console.log(`Dynamic CSS injected for cursor`);
 	}
 
 	hexToRgb(hex: string): { r: number, g: number, b: number } {
@@ -605,10 +605,10 @@ export default class VisibleCursorPlugin extends Plugin {
 	}
 
 	onunload() {
+		if (this.styleElement) {
+			this.styleElement.remove();
+		}
 		if (this.flashTimeout) {
-			if (this.styleElement) {
-				this.styleElement.remove();
-			}
 			clearTimeout(this.flashTimeout);
 		}
 		if (this.resetFlashTimeout) {
@@ -617,5 +617,10 @@ export default class VisibleCursorPlugin extends Plugin {
 		if (this.scrollDebounceTimer) {
 			clearTimeout(this.scrollDebounceTimer);
 		}
+		// Remove global event listeners added in onload
+		window.removeEventListener('pointerdown', this.boundStartFence, { capture: true });
+		window.removeEventListener('pointerup', this.boundEndFenceSoon, { capture: true });
+		window.removeEventListener('pointercancel', this.boundEndFenceSoon, { capture: true });
+		window.removeEventListener('click', this.boundClickEndFence, { capture: true });
 	}
 }

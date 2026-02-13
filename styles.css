@@ -1,4 +1,4 @@
-/* Line highlight beacon animation - fades out smoothly */
+/* Line highlight flash animation - fades out smoothly */
 @keyframes flash-line-fade {
 	0% {
 		opacity: 1;

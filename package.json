@@ -16,10 +16,10 @@
     "navigation",
     "visibility"
   ],
-  "author": "",
+  "author": "Scott Otterson",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^16.11.6",
+    "@types/node": "^18.0.0",
     "@typescript-eslint/eslint-plugin": "^5.2.0",
     "@typescript-eslint/parser": "^5.2.0",
     "@vitest/coverage-v8": "^3.2.4",

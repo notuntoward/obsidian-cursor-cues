@@ -43,9 +43,9 @@ Obsidian's default cursor can be difficult to track when:
 
 ## Installation
 
-Download latest release → Extract to `.obsidian/plugins/visible-cursor/` → Reload
+### Manual Installation
 
-Or install from Community Plugins (search "Visible Cursor").
+Download the latest release from the [GitHub releases page](https://github.com/notuntoward/obsidian-cursor-cues/releases). Extract `main.js`, `manifest.json`, and `styles.css` into `.obsidian/plugins/visible-cursor/`, then reload Obsidian.
 
 ## Settings Guide
 
@@ -128,74 +128,3 @@ Or install from Community Plugins (search "Visible Cursor").
 - Fixed: Uses pixel distance to prevent unwanted flashing
 
 See GitHub for full changelog.
-
----
-
-## Screenshot Guide for Plugin Developers
-
-To ensure screenshots render correctly in both GitHub and the Obsidian Community Plugin store:
-
-### Directory Structure
-```
-obsidian-visible-cursor/
-├── README.md
-└── screenshots/
-    ├── demo.gif
-    ├── before-after.png
-    ├── cursor-styles.png
-    ├── line-highlights.png
-    ├── settings-cursor.png
-    ├── settings-flash.png
-    ├── settings-triggers.png
-    └── settings-colors.png
-```
-
-### Recommended Screenshots
-
-1. **demo.gif** - Animated GIF showing the plugin in action
-   - Capture cursor movement, scrolling, and flash effects
-   - 5-10 seconds, optimized to <2MB
-   - Recommended size: 800-1200px wide
-
-2. **before-after.png** - Split comparison
-   - Left side: Default Obsidian (cursor hard to see)
-   - Right side: With Visible Cursor active
-   - Annotate with arrows or labels
-
-3. **cursor-styles.png** - Show both cursor options
-   - Side-by-side: block cursor vs thick vertical
-   - Include text to show cursor at different positions
-
-4. **line-highlights.png** - Demonstrate flash modes
-   - Show all three line highlight options
-   - Capture mid-flash for visibility
-
-5. **settings-*.png** - Settings panel screenshots
-   - Capture each settings section
-   - Show default values
-   - 600-800px wide for readability
-
-### Image Best Practices
-
-- **Format**: PNG for screenshots, GIF for animations
-- **Size**: Keep images under 500KB (GIFs under 2MB)
-- **Resolution**: 2x for Retina displays, but optimize file size
-- **Annotations**: Use arrows, boxes, or labels to highlight features
-- **Theme**: Show both light and dark themes if relevant
-- **Compression**: Use tools like TinyPNG or ImageOptim
-
-### Markdown Syntax
-
-For GitHub and Obsidian Community Plugin store compatibility, use:
-
-```markdown
-![Alt text](screenshots/filename.png)
-*Caption text in italics*
-```
-
-Or for more control:
-```markdown
-<img src="screenshots/filename.png" alt="Alt text" width="600">
-```
-
-The Community Plugin store will automatically render images from your GitHub repository's `main` or `master` branch.
