@@ -39,8 +39,8 @@
   pointer-events: none;
   contain: paint;
   will-change: opacity, transform;
-  /* Creates a 2px wide vertical line using background gradient */
-  background: linear-gradient(90deg, var(--cursor-bg) 0px, var(--cursor-bg) 2px, transparent 2px) !important;
+  /* Creates a 3px wide vertical line using background gradient */
+  background: linear-gradient(90deg, var(--cursor-bg) 0px, var(--cursor-bg) 3px, transparent 3px) !important;
   background-color: transparent !important;
 }
 

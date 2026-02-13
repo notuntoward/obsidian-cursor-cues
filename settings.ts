@@ -167,6 +167,7 @@ export class CursorCuesSettingTab extends PluginSettingTab {
 				.onChange(async (value) => {
 					this.plugin.settings.useThemeColors = value;
 					await this.plugin.saveSettings();
+					this.plugin.refreshDecorations();
 					this.display();
 				}));
 

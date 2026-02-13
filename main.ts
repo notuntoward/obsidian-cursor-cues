@@ -15,7 +15,7 @@ class EndOfLineWidget extends WidgetType {
 			const heightStyle = this.lineHeight ? `height: ${this.lineHeight}px;` : 'height: 1em;';
 			span.style.cssText = `
 				display: inline-block;
-				width: 2px;
+				width: 3px;
 				${heightStyle}
 				background-color: ${this.markerColor};
 				pointer-events: none;
@@ -43,12 +43,13 @@ class VerticalCursorWidget extends WidgetType {
 		const span = document.createElement('span');
 		span.style.cssText = `
 			display: inline-block;
-			width: 2px;
+			width: 3px;
 			height: ${this.lineHeight}px;
 			background-color: ${this.markerColor};
-			margin-right: -2px;
 			pointer-events: none;
 			vertical-align: text-bottom;
+			position: relative;
+			z-index: 1;
 		`;
 		span.setAttribute('aria-hidden', 'true');
 		return span;
@@ -553,7 +554,7 @@ export default class CursorCuesPlugin extends Plugin {
 		if (this.settings.blockCursorStyle === 'thick-vertical') {
 			styleContent += `
 			.cursor-cues-thick-vertical {
-				background: linear-gradient(90deg, ${markerColor} 0px, ${markerColor} 2px, transparent 2px) !important;
+				background: linear-gradient(90deg, ${markerColor} 0px, ${markerColor} 3px, transparent 3px) !important;
 			}
 			`;
 		}
