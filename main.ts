@@ -24,6 +24,7 @@ class EndOfLineWidget extends WidgetType {
 				margin-left: -1px;
 			`;
 		} else {
+			span.className = 'cursor-flash-block-mark';
 			span.style.cssText = `
 				background-color: ${this.markerColor};
 				color: ${this.contrastColor};
