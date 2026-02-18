@@ -66,3 +66,12 @@
   contain: paint;
   will-change: opacity, transform;
 }
+
+/* Fix toggle switch colors in settings to respect theme accent color */
+.visible-cursor-settings .checkbox-container {
+  background-color: var(--background-modifier-border) !important;
+}
+
+.visible-cursor-settings .checkbox-container.is-enabled {
+  background-color: var(--interactive-accent) !important;
+}

@@ -41,6 +41,7 @@ export class VisibleCursorSettingTab extends PluginSettingTab {
 	display(): void {
 		const {containerEl} = this;
 		containerEl.empty();
+		containerEl.addClass('visible-cursor-settings');
 
 		// ===========================================
 		// CURSOR APPEARANCE
