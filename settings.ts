@@ -27,7 +27,7 @@ export const DEFAULT_SETTINGS: VisibleCursorPluginSettings = {
 	useThemeColors: true,
 	flashOnWindowScrolls: true,
 	flashOnWindowChanges: true,
-	flashSize: 8
+	flashSize: 15
 }
 
 export class VisibleCursorSettingTab extends PluginSettingTab {
@@ -114,14 +114,14 @@ export class VisibleCursorSettingTab extends PluginSettingTab {
 
 		const flashSizeSetting = new Setting(containerEl)
 			.setName('Flash size')
-			.setDesc(`Width of the flash (4-15 characters) - ${this.plugin.settings.flashSize}ch`)
+			.setDesc(`Width of the flash (4-30 characters) - ${this.plugin.settings.flashSize}ch`)
 			.addSlider(slider => slider
-				.setLimits(4, 15, 1)
+				.setLimits(4, 30, 1)
 				.setValue(this.plugin.settings.flashSize)
 				.setDynamicTooltip()
 				.onChange(async (value: number) => {
 					this.plugin.settings.flashSize = value;
-					flashSizeSetting.setDesc(`Width of the flash (4-15 characters) - ${value}ch`);
+					flashSizeSetting.setDesc(`Width of the flash (4-30 characters) - ${value}ch`);
 					await this.plugin.saveSettings();
 				}));
 
