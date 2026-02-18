@@ -475,27 +475,25 @@ export default class VisibleCursorPlugin extends Plugin {
 	getColor(): { color: string, opacity: number } {
 		const isDark = document.body.classList.contains('theme-dark');
 		if (this.settings.useThemeColors) {
-			let accentColor = getComputedStyle(document.body)
+			const accentColor = getComputedStyle(document.body)
 				.getPropertyValue('--interactive-accent').trim();
 
-			// Adjust color based on theme and cursor style for optimal contrast
 			if (accentColor) {
 				if (this.settings.customCursorStyle === 'bar') {
-					// Bar cursor: use accent color with slight adjustment
-					if (!isDark) {
-						// Light theme: mix 60% accent with 40% white for visibility
-						accentColor = `color-mix(in srgb, ${accentColor} 60%, white)`;
-					}
-					// Dark theme: use accent as-is for bar cursor
+					// Bar cursor: use accent as-is
+					return { color: accentColor, opacity: 0.8 };
+				}
+				
+				// Block cursor: adjust accent color for better text readability
+				// We want a color that works well with either white or black text
+				if (isDark) {
+					// Dark theme: lighten the accent slightly so white text is more readable
+					// Mix 85% accent with 15% white for a slightly lighter background
+					return { color: `color-mix(in srgb, ${accentColor} 85%, white)`, opacity: 0.8 };
 				} else {
-					// Block cursor
-					if (isDark) {
-						// Dark theme: use accent as-is, white text for contrast
-					} else {
-						// Light theme: use a darker accent so black text is readable
-						// Mix 70% accent with 30% black for a darker background
-						accentColor = `color-mix(in srgb, ${accentColor} 70%, black)`;
-					}
+					// Light theme: significantly lighten the accent so black text is readable
+					// Mix 30% accent with 70% white for a light pastel background
+					return { color: `color-mix(in srgb, ${accentColor} 30%, white)`, opacity: 0.8 };
 				}
 			}
 
@@ -518,8 +516,8 @@ export default class VisibleCursorPlugin extends Plugin {
 	}
 
 	getContrastRatio(color1: string, color2: string): number {
-		const rgb1 = this.hexToRgb(color1);
-		const rgb2 = this.hexToRgb(color2);
+		const rgb1 = this.resolveColorToRgb(color1);
+		const rgb2 = this.resolveColorToRgb(color2);
 
 		const L1 = this.getRelativeLuminance(rgb1.r, rgb1.g, rgb1.b);
 		const L2 = this.getRelativeLuminance(rgb2.r, rgb2.g, rgb2.b);
@@ -530,53 +528,65 @@ export default class VisibleCursorPlugin extends Plugin {
 		return (lighter + 0.05) / (darker + 0.05);
 	}
 
-	getContrastColor(hexColor: string): string {
-		const isDark = document.body.classList.contains('theme-dark');
+	getContrastColor(cursorBackgroundColor: string): string {
 		const computedStyle = getComputedStyle(document.body);
 		
-		// For theme colors, try to use --text-on-accent which is designed for this purpose
-		if (this.settings.useThemeColors) {
-			const textOnAccent = computedStyle.getPropertyValue('--text-on-accent').trim();
-			if (textOnAccent) {
-				return textOnAccent;
-			}
-			// Fallback: white for dark mode, black for light mode
-			return isDark ? '#ffffff' : '#000000';
-		}
-		
-		// For custom colors (hex values), calculate contrast properly
+		// Get theme colors for candidate text colors
 		const bgColor = computedStyle.getPropertyValue('--background-primary').trim() || '#ffffff';
 		const textColor = computedStyle.getPropertyValue('--text-normal').trim() || '#000000';
+		const textOnAccent = computedStyle.getPropertyValue('--text-on-accent').trim();
 		
-		// Minimum contrast ratio for readability
-		const MIN_CONTRAST = 4.5;
+		// Resolve the cursor background color to RGB for contrast calculation
+		// This handles CSS variables like --interactive-accent
+		let resolvedCursorColor = cursorBackgroundColor;
+		if (cursorBackgroundColor.startsWith('var(') || cursorBackgroundColor.startsWith('color-mix')) {
+			// Create temp element to resolve the color
+			const temp = document.createElement('div');
+			temp.style.cssText = `background-color: ${cursorBackgroundColor}; display: none;`;
+			document.body.appendChild(temp);
+			resolvedCursorColor = getComputedStyle(temp).backgroundColor;
+			document.body.removeChild(temp);
+		}
 		
-		// Candidate colors to try for contrast
-		const candidates = isDark 
-			? ['#ffffff', '#f0f0f0', textColor]  // Dark mode: prefer light text against accent
-			: ['#000000', '#1a1a1a', textColor]; // Light mode: prefer dark text against accent
+		// Candidate text colors to try, in order of preference:
+		// 1. Theme's --text-on-accent (if available) - designed for text on accent colors
+		// 2. White (#ffffff) - works well on dark/medium backgrounds
+		// 3. Black (#000000) - works well on light backgrounds
+		// 4. Theme's normal text color
+		// 5. Theme's background color (inverted from normal)
+		const candidates: { color: string; priority: number }[] = [];
+		
+		if (textOnAccent) {
+			candidates.push({ color: textOnAccent, priority: 1 });
+		}
+		candidates.push({ color: '#ffffff', priority: 2 });
+		candidates.push({ color: '#000000', priority: 3 });
+		candidates.push({ color: textColor, priority: 4 });
+		candidates.push({ color: bgColor, priority: 5 });
 		
 		// Calculate contrast ratios and find the best option
-		let bestColor = textColor;
-		let bestContrast = 1;
+		let bestColor = '#ffffff';
+		let bestContrast = 0;
+		let bestPriority = Infinity;
 		
 		for (const candidate of candidates) {
 			try {
-				const contrast = this.getContrastRatio(hexColor, candidate);
-				if (contrast > bestContrast) {
+				const contrast = this.getContrastRatio(resolvedCursorColor, candidate.color);
+				// Prefer higher contrast, but among similar contrast levels, prefer lower priority
+				// Use a threshold of 0.5 to consider contrast "similar"
+				if (contrast > bestContrast + 0.5 || 
+					(contrast > bestContrast - 0.5 && candidate.priority < bestPriority)) {
 					bestContrast = contrast;
-					bestColor = candidate;
+					bestColor = candidate.color;
+					bestPriority = candidate.priority;
 				}
 			} catch (e) {
 				// Skip invalid colors
 			}
 		}
 		
-		// If best contrast is still too low, return white/black
-		if (bestContrast < MIN_CONTRAST) {
-			return isDark ? '#ffffff' : '#000000';
-		}
-		
+		// Minimum contrast ratio for readability (WCAG AA for normal text is 4.5:1)
+		// If we can't achieve good contrast, at least return the best we found
 		return bestColor;
 	}
 
@@ -624,6 +634,41 @@ export default class VisibleCursorPlugin extends Plugin {
 			g: parseInt(result[2], 16),
 			b: parseInt(result[3], 16)
 		} : { r: 100, g: 150, b: 255 };
+	}
+
+	/**
+	 * Resolve any CSS color (including color-mix(), var(), etc.) to RGB values
+	 * by creating a temporary element and reading the computed color
+	 */
+	resolveColorToRgb(color: string): { r: number, g: number, b: number } {
+		// First try parsing as hex or rgb
+		if (color.startsWith('#') || color.startsWith('rgb')) {
+			return this.hexToRgb(color);
+		}
+		
+		// For color-mix(), var(), or other CSS functions, use a temporary element
+		try {
+			const temp = document.createElement('div');
+			temp.style.cssText = `color: ${color}; display: none;`;
+			document.body.appendChild(temp);
+			const computed = getComputedStyle(temp).color;
+			document.body.removeChild(temp);
+			
+			// Parse the computed rgb() or rgba() value
+			const matches = computed.match(/\d+/g);
+			if (matches && matches.length >= 3) {
+				return {
+					r: parseInt(matches[0]),
+					g: parseInt(matches[1]),
+					b: parseInt(matches[2])
+				};
+			}
+		} catch (e) {
+			// Fall through to default
+		}
+		
+		// Default fallback
+		return { r: 100, g: 150, b: 255 };
 	}
 
 	refreshDecorations() {
