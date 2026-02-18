@@ -6,10 +6,10 @@ export interface VisibleCursorPluginSettings {
 	customCursorMode: 'always' | 'flash' | 'off';
 	customCursorStyle: 'block' | 'bar';
 	lineHighlightMode: 'left' | 'centered' | 'right' | 'off';
-	cursorColorLight: string;
-	cursorColorDark: string;
+	cursorCustomColorLight: string;
+	cursorCustomColorDark: string;
 	lineDuration: number;
-	cursorDuration: number;
+	flashDuration: number;
 	useThemeColors: boolean;
 	flashOnWindowScrolls: boolean;
 	flashOnWindowChanges: boolean;
@@ -20,10 +20,10 @@ export const DEFAULT_SETTINGS: VisibleCursorPluginSettings = {
 	customCursorMode: 'always',
 	customCursorStyle: 'block',
 	lineHighlightMode: 'centered',
-	cursorColorLight: '#6496ff',
-	cursorColorDark: '#6496ff',
+	cursorCustomColorLight: '#6496ff',
+	cursorCustomColorDark: '#6496ff',
 	lineDuration: 500,
-	cursorDuration: 500,
+	flashDuration: 500,
 	useThemeColors: true,
 	flashOnWindowScrolls: true,
 	flashOnWindowChanges: true,
@@ -106,7 +106,7 @@ export class VisibleCursorSettingTab extends PluginSettingTab {
 				.setDynamicTooltip()
 				.onChange(async (value: number) => {
 					this.plugin.settings.lineDuration = Math.round(value * 1000);
-					this.plugin.settings.cursorDuration = Math.round(value * 1000);
+					this.plugin.settings.flashDuration = Math.round(value * 1000);
 					fadeDurationSetting.setDesc(`How long the flash lasts (applies to line highlight and 'Only during flash' cursor) (0.2s - 1.5s) - ${value.toFixed(2)}s`);
 					await this.plugin.saveSettings();
 				}));
@@ -175,9 +175,9 @@ export class VisibleCursorSettingTab extends PluginSettingTab {
 				.setName('Light theme color')
 				.setDesc('Color for light theme')
 				.addColorPicker(colorPicker => colorPicker
-					.setValue(this.plugin.settings.cursorColorLight)
+					.setValue(this.plugin.settings.cursorCustomColorLight)
 					.onChange(async (value) => {
-						this.plugin.settings.cursorColorLight = value;
+						this.plugin.settings.cursorCustomColorLight = value;
 						await this.plugin.saveSettings();
 						this.plugin.refreshDecorations();
 					}));
@@ -186,9 +186,9 @@ export class VisibleCursorSettingTab extends PluginSettingTab {
 				.setName('Dark theme color')
 				.setDesc('Color for dark theme')
 				.addColorPicker(colorPicker => colorPicker
-					.setValue(this.plugin.settings.cursorColorDark)
+					.setValue(this.plugin.settings.cursorCustomColorDark)
 					.onChange(async (value) => {
-						this.plugin.settings.cursorColorDark = value;
+						this.plugin.settings.cursorCustomColorDark = value;
 						await this.plugin.saveSettings();
 						this.plugin.refreshDecorations();
 					}));

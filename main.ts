@@ -499,7 +499,7 @@ export default class VisibleCursorPlugin extends Plugin {
 
 			return { color: accentColor || '#6496ff', opacity: 0.8 };
 		}
-		const color = isDark ? this.settings.cursorColorDark : this.settings.cursorColorLight;
+		const color = isDark ? this.settings.cursorCustomColorDark : this.settings.cursorCustomColorLight;
 		return { color, opacity: 0.8 };
 	}
 
