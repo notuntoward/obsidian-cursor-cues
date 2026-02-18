@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { hexToRgb, getRelativeLuminance, getContrastRatio, getContrastColor } from '../src/utils';
+import {
+	hexToRgb,
+	getRelativeLuminance,
+	getContrastRatio,
+	getContrastColor,
+	calculateLineHeightFromFontSize,
+	calculateCharacterWidth,
+	calculateHighlightDistance,
+	calculatePercentage,
+	shouldAllowFlash,
+	calculateScrollDebounceTime
+} from '../src/utils';
 
 describe('hexToRgb', () => {
 	it('should convert a 6-digit hex color to RGB', () => {
@@ -126,5 +137,128 @@ describe('getContrastColor', () => {
 		// Light color on dark - text has higher contrast
 		const result = getContrastColor('#ffffff', '#ffffff', '#000000');
 		expect(result).toBe('#000000');
+	});
+});
+
+describe('calculateLineHeightFromFontSize', () => {
+	it('should calculate 1.5x font size', () => {
+		expect(calculateLineHeightFromFontSize(16)).toBe(24);
+	});
+
+	it('should handle decimal font sizes', () => {
+		expect(calculateLineHeightFromFontSize(14.5)).toBe(21.75);
+	});
+
+	it('should handle large font sizes', () => {
+		expect(calculateLineHeightFromFontSize(32)).toBe(48);
+	});
+});
+
+describe('calculateCharacterWidth', () => {
+	it('should calculate 0.6x font size', () => {
+		expect(calculateCharacterWidth(16)).toBe(9.6);
+	});
+
+	it('should handle typical editor font sizes', () => {
+		expect(calculateCharacterWidth(14)).toBe(8.4);
+	});
+
+	it('should handle edge cases', () => {
+		expect(calculateCharacterWidth(0)).toBe(0);
+		expect(calculateCharacterWidth(100)).toBe(60);
+	});
+});
+
+describe('calculateHighlightDistance', () => {
+	it('should multiply flash size by character width', () => {
+		const charWidth = 9.6;
+		const flashSize = 8;
+		expect(calculateHighlightDistance(flashSize, charWidth)).toBe(76.8);
+	});
+
+	it('should handle edge cases', () => {
+		expect(calculateHighlightDistance(0, 10)).toBe(0);
+		expect(calculateHighlightDistance(5, 0)).toBe(0);
+	});
+
+	it('should scale with different widths', () => {
+		expect(calculateHighlightDistance(10, 6)).toBe(60);
+		expect(calculateHighlightDistance(10, 12)).toBe(120);
+	});
+});
+
+describe('calculatePercentage', () => {
+	it('should calculate percentage of container width', () => {
+		expect(calculatePercentage(50, 1000)).toBe(5);
+	});
+
+	it('should cap at 100 percent', () => {
+		expect(calculatePercentage(2000, 1000)).toBe(100);
+	});
+
+	it('should handle zero container width gracefully', () => {
+		expect(calculatePercentage(50, 0)).toBe(100);
+	});
+
+	it('should handle edge cases', () => {
+		expect(calculatePercentage(0, 100)).toBe(0);
+		expect(calculatePercentage(100, 100)).toBe(100);
+	});
+});
+
+describe('shouldAllowFlash', () => {
+	it('should allow flash for view-change trigger even with active click fence', () => {
+		expect(shouldAllowFlash('view-change', true, false, false)).toBe(true);
+	});
+
+	it('should allow flash for layout-change trigger even with active click fence', () => {
+		expect(shouldAllowFlash('layout-change', true, false, false)).toBe(true);
+	});
+
+	it('should block flash for scroll trigger with active click fence', () => {
+		expect(shouldAllowFlash('scroll', true, false, false)).toBe(false);
+	});
+
+	it('should block flash when flash is already active', () => {
+		expect(shouldAllowFlash('scroll', false, true, false)).toBe(false);
+	});
+
+	it('should block flash when pending flash exists', () => {
+		expect(shouldAllowFlash('scroll', false, false, true)).toBe(false);
+	});
+
+	it('should allow flash in normal conditions', () => {
+		expect(shouldAllowFlash('scroll', false, false, false)).toBe(true);
+	});
+
+	it('should block scroll trigger with active fence but allow view trigger', () => {
+		const scrollBlocked = shouldAllowFlash('scroll', true, false, false);
+		const viewAllowed = shouldAllowFlash('view-change', true, false, false);
+		expect(scrollBlocked).toBe(false);
+		expect(viewAllowed).toBe(true);
+	});
+});
+
+describe('calculateScrollDebounceTime', () => {
+	it('should return 250ms for small scroll delta', () => {
+		expect(calculateScrollDebounceTime(3)).toBe(250);
+	});
+
+	it('should return 250ms for exactly 5px delta', () => {
+		expect(calculateScrollDebounceTime(5)).toBe(150);
+	});
+
+	it('should return 150ms for large scroll delta', () => {
+		expect(calculateScrollDebounceTime(50)).toBe(150);
+	});
+
+	it('should return 150ms for zero delta', () => {
+		expect(calculateScrollDebounceTime(0)).toBe(250);
+	});
+
+	it('should have a clear threshold at 5px', () => {
+		expect(calculateScrollDebounceTime(4)).toBe(250);
+		expect(calculateScrollDebounceTime(5)).toBe(150);
+		expect(calculateScrollDebounceTime(6)).toBe(150);
 	});
 });

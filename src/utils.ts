@@ -80,3 +80,61 @@ export function getContrastColor(hexColor: string, bgColor: string = '#ffffff', 
 	// Choose whichever has the highest contrast
 	return textContrast > bgContrast ? textColor : bgColor;
 }
+
+/**
+ * Calculate line height from font size
+ */
+export function calculateLineHeightFromFontSize(fontSize: number): number {
+	return fontSize * 1.5;
+}
+
+/**
+ * Calculate character width from font size
+ */
+export function calculateCharacterWidth(fontSize: number): number {
+	return fontSize * 0.6;
+}
+
+/**
+ * Calculate highlight distance based on flash size setting
+ */
+export function calculateHighlightDistance(flashSize: number, charWidth: number): number {
+	return flashSize * charWidth;
+}
+
+/**
+ * Calculate percentage of container width
+ */
+export function calculatePercentage(distance: number, containerWidth: number): number {
+	return Math.min(100, (distance / containerWidth) * 100);
+}
+
+/**
+ * Determine if a flash trigger should be allowed based on click fence and view triggers
+ */
+export function shouldAllowFlash(
+	trigger: string,
+	isFenceActive: boolean,
+	isFlashActive: boolean,
+	hasPendingFlash: boolean
+): boolean {
+	const isViewTrigger = trigger === 'view-change' || trigger === 'layout-change';
+	
+	// View/layout triggers bypass click fence
+	if (!isViewTrigger && isFenceActive) {
+		return false;
+	}
+	
+	if (isFlashActive || hasPendingFlash) {
+		return false;
+	}
+	
+	return true;
+}
+
+/**
+ * Determine debounce time based on scroll delta
+ */
+export function calculateScrollDebounceTime(scrollDelta: number): number {
+	return scrollDelta < 5 ? 250 : 150;
+}

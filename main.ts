@@ -2,6 +2,10 @@ import { Plugin, MarkdownView } from 'obsidian';
 import { EditorView, ViewPlugin, ViewUpdate, Decoration, DecorationSet, WidgetType } from '@codemirror/view';
 import { RangeSetBuilder } from '@codemirror/state';
 import { VisibleCursorPluginSettings, DEFAULT_SETTINGS, VisibleCursorSettingTab } from './settings';
+import { ColorService } from './src/services/colorService';
+import { FlashScheduler, type FlashState } from './src/services/flashScheduler';
+import { FlashRenderer } from './src/services/flashRenderer';
+import { hexToRgb } from './src/utils';
 
 class EndOfLineWidget extends WidgetType {
 	constructor(private markerColor: string, private contrastColor: string, private style: 'block' | 'bar' = 'block', private lineHeight?: number) {
@@ -79,8 +83,19 @@ export default class VisibleCursorPlugin extends Plugin {
 	private boundEndFenceSoon: () => void;
 	private boundClickEndFence: () => void;
 
+	// Services
+	private colorService: ColorService;
+	private flashScheduler: FlashScheduler;
+	private flashRenderer: FlashRenderer;
+
 	async onload() {
 		await this.loadSettings();
+
+		// Initialize services
+		this.colorService = new ColorService();
+		this.flashScheduler = new FlashScheduler();
+		this.flashRenderer = new FlashRenderer();
+
 		this.addSettingTab(new VisibleCursorSettingTab(this.app, this));
 
 		const decorationPlugin = this.createDecorationPlugin();
@@ -150,8 +165,8 @@ export default class VisibleCursorPlugin extends Plugin {
 				}
 
 				const pos = view.state.selection.main.head;
-				const markerColor = plugin.getColor().color;
-				const contrastColor = plugin.getContrastColor(markerColor);
+				const markerColor = plugin.colorService.getColor(plugin.settings).color;
+				const contrastColor = plugin.colorService.getContrastColor(markerColor);
 				plugin.updateCursorStyles(markerColor, contrastColor);
 
 				// Get the actual line height from font-size which is more reliable
@@ -253,7 +268,7 @@ export default class VisibleCursorPlugin extends Plugin {
 					clearTimeout(plugin.scrollDebounceTimer);
 				}
 
-				const debounceTime = scrollDelta < 5 ? 250 : 150;
+				const debounceTime = plugin.flashScheduler.getScrollDebounceTime(scrollDelta);
 				plugin.scrollDebounceTimer = setTimeout(() => {
 					plugin.scheduleFlash('scroll', false);
 					plugin.scrollDebounceTimer = null;
@@ -266,21 +281,24 @@ export default class VisibleCursorPlugin extends Plugin {
 
 	scheduleFlash(trigger: string, isMouseClick: boolean) {
 		if (isMouseClick) return;
-		const isViewTrigger = trigger === 'view-change' || trigger === 'layout-change';
-		// View/layout triggers bypass click fence because
-		// switching notes inherently involves a click.
-		if (!isViewTrigger && this.clickFenceActive) return;
-		if (this.flashActive || this.pendingFlashTrigger) return;
-		const now = Date.now();
-		if (now - this.lastViewChange < 100) return;
 
-		this.lastViewChange = now;
+		const state: FlashState = {
+			isFenceActive: this.clickFenceActive,
+			isFlashActive: this.flashActive,
+			hasPendingFlash: !!this.pendingFlashTrigger,
+			lastViewChange: this.lastViewChange,
+			now: Date.now()
+		};
+
+		if (!this.flashScheduler.canScheduleFlash(trigger, state)) return;
+
+		this.lastViewChange = state.now;
 		if (this.flashTimeout) {
 			clearTimeout(this.flashTimeout);
 		}
 
 		this.pendingFlashTrigger = trigger;
-		this.flashTimeout = setTimeout(() => {
+		this.flashTimeout = this.flashScheduler.scheduleCallback(() => {
 			this.showFlash();
 			this.pendingFlashTrigger = null;
 		}, 50);
@@ -321,7 +339,7 @@ export default class VisibleCursorPlugin extends Plugin {
 			if (isViewFlashTrigger || !this.clickFenceActive) { editorView.dispatch({}); }
 		}
 
-		this.resetFlashTimeout = setTimeout(() => {
+		this.resetFlashTimeout = this.flashScheduler.scheduleReset(() => {
 			this.flashActive = false;
 			if (this.settings.customCursorMode === 'flash') {
 				editorView.dispatch({});
@@ -340,37 +358,33 @@ export default class VisibleCursorPlugin extends Plugin {
 		const editorElement = editorView.contentDOM;
 		const editorRect = editorElement.getBoundingClientRect();
 		const lineHeight = editorView.defaultLineHeight;
-		const { color, opacity } = this.getColor();
-		const rgb = this.hexToRgb(color);
+		const { color, opacity } = this.colorService.getColor(this.settings);
+		const rgb = hexToRgb(color);
 		// Calculate highlight distance based on flashSize setting (in character widths)
 		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
 		const charWidth = fontSize * 0.6; // Approximate character width
 		const highlightDistance = this.settings.flashSize * charWidth; // Direct width in pixels
 		const highlightPercent = Math.min(100, (highlightDistance / editorRect.width) * 100);
 
-		const lineHighlight = document.createElement('div');
-		lineHighlight.className = 'obsidian-flash-line';
-		lineHighlight.style.cssText = `
-		position: fixed;
-		left: ${editorRect.left}px;
-		top: ${coords.top}px;
-		width: ${editorRect.width}px;
-		height: ${lineHeight}px;
-		background: linear-gradient(to right,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity}) 0%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) ${highlightPercent * 0.5}%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${highlightPercent}%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
-		);
-		pointer-events: none;
-		z-index: 1;
-		animation: flash-line-fade ${this.settings.lineDuration}ms ease-out;
+		const colorStop = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
+		const cssText = `
+			position: fixed;
+			left: ${editorRect.left}px;
+			top: ${coords.top}px;
+			width: ${editorRect.width}px;
+			height: ${lineHeight}px;
+			background: linear-gradient(to right,
+				${colorStop} 0%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) ${highlightPercent * 0.5}%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${highlightPercent}%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
+			);
+			pointer-events: none;
+			z-index: 1;
+			animation: flash-line-fade ${this.settings.lineDuration}ms ease-out;
 		`;
 
-		document.body.appendChild(lineHighlight);
-		setTimeout(() => {
-			lineHighlight.remove();
-		}, this.settings.lineDuration);
+		this.flashRenderer.render('left', cssText, this.settings.lineDuration);
 	}
 
 	showLineFlashRightToLeft(editorView: EditorView) {
@@ -384,37 +398,33 @@ export default class VisibleCursorPlugin extends Plugin {
 		const editorElement = editorView.contentDOM;
 		const editorRect = editorElement.getBoundingClientRect();
 		const lineHeight = editorView.defaultLineHeight;
-		const { color, opacity } = this.getColor();
-		const rgb = this.hexToRgb(color);
+		const { color, opacity } = this.colorService.getColor(this.settings);
+		const rgb = hexToRgb(color);
 		// Calculate highlight distance based on flashSize setting (in character widths)
 		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
 		const charWidth = fontSize * 0.6; // Approximate character width
 		const highlightDistance = this.settings.flashSize * charWidth; // Direct width in pixels
 		const highlightPercent = Math.min(100, (highlightDistance / editorRect.width) * 100);
 
-		const lineHighlight = document.createElement('div');
-		lineHighlight.className = 'obsidian-flash-line';
-		lineHighlight.style.cssText = `
-		position: fixed;
-		left: ${editorRect.left}px;
-		top: ${coords.top}px;
-		width: ${editorRect.width}px;
-		height: ${lineHeight}px;
-		background: linear-gradient(to left,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity}) 0%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) ${highlightPercent * 0.5}%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${highlightPercent}%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
-		);
-		pointer-events: none;
-		z-index: 1;
-		animation: flash-line-fade ${this.settings.lineDuration}ms ease-out;
+		const colorStop = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
+		const cssText = `
+			position: fixed;
+			left: ${editorRect.left}px;
+			top: ${coords.top}px;
+			width: ${editorRect.width}px;
+			height: ${lineHeight}px;
+			background: linear-gradient(to left,
+				${colorStop} 0%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity * 0.5}) ${highlightPercent * 0.5}%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${highlightPercent}%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
+			);
+			pointer-events: none;
+			z-index: 1;
+			animation: flash-line-fade ${this.settings.lineDuration}ms ease-out;
 		`;
 
-		document.body.appendChild(lineHighlight);
-		setTimeout(() => {
-			lineHighlight.remove();
-		}, this.settings.lineDuration);
+		this.flashRenderer.render('right', cssText, this.settings.lineDuration);
 	}
 
 	showCursorCenteredFlash(editorView: EditorView) {
@@ -431,11 +441,9 @@ export default class VisibleCursorPlugin extends Plugin {
 		const cursorX = coords.left - editorRect.left;
 		const editorWidth = editorRect.width;
 		const cursorPercent = (cursorX / editorWidth) * 100;
-		const { color, opacity } = this.getColor();
-		const rgb = this.hexToRgb(color);
+		const { color, opacity } = this.colorService.getColor(this.settings);
+		const rgb = hexToRgb(color);
 
-		const lineHighlight = document.createElement('div');
-		lineHighlight.className = 'obsidian-flash-cursor-line';
 		const peakOpacity = opacity;
 		const fadeOpacity = opacity * 0.75;
 		// Calculate spread distance based on flashSize setting (in character widths)
@@ -446,149 +454,30 @@ export default class VisibleCursorPlugin extends Plugin {
 		const leftEdge = Math.max(0, cursorPercent - spreadPercent);
 		const rightEdge = Math.min(100, cursorPercent + spreadPercent);
 
-		lineHighlight.style.cssText = `
-		position: fixed;
-		left: ${editorRect.left}px;
-		top: ${coords.top}px;
-		width: ${editorRect.width}px;
-		height: ${lineHeight}px;
-		background: linear-gradient(to right,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${leftEdge}%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${fadeOpacity}) ${(leftEdge + cursorPercent) / 2}%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${peakOpacity}) ${cursorPercent}%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${fadeOpacity}) ${(cursorPercent + rightEdge) / 2}%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${rightEdge}%,
-			rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
-		);
-		pointer-events: none;
-		z-index: 1;
-		animation: flash-line-fade ${this.settings.lineDuration}ms ease-out;
+		const cssText = `
+			position: fixed;
+			left: ${editorRect.left}px;
+			top: ${coords.top}px;
+			width: ${editorRect.width}px;
+			height: ${lineHeight}px;
+			background: linear-gradient(to right,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${leftEdge}%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${fadeOpacity}) ${(leftEdge + cursorPercent) / 2}%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${peakOpacity}) ${cursorPercent}%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${fadeOpacity}) ${(cursorPercent + rightEdge) / 2}%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) ${rightEdge}%,
+				rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 100%
+			);
+			pointer-events: none;
+			z-index: 1;
+			animation: flash-line-fade ${this.settings.lineDuration}ms ease-out;
 		`;
 
-		document.body.appendChild(lineHighlight);
-		setTimeout(() => {
-			lineHighlight.remove();
-		}, this.settings.lineDuration);
+		this.flashRenderer.render('centered', cssText, this.settings.lineDuration);
 	}
 
-	getColor(): { color: string, opacity: number } {
-		const isDark = document.body.classList.contains('theme-dark');
-		if (this.settings.useThemeColors) {
-			const accentColor = getComputedStyle(document.body)
-				.getPropertyValue('--interactive-accent').trim();
 
-			if (accentColor) {
-				if (this.settings.customCursorStyle === 'bar') {
-					// Bar cursor: use accent as-is
-					return { color: accentColor, opacity: 0.8 };
-				}
-				
-				// Block cursor: adjust accent color for better text readability
-				// We want a color that works well with either white or black text
-				if (isDark) {
-					// Dark theme: lighten the accent slightly so white text is more readable
-					// Mix 85% accent with 15% white for a slightly lighter background
-					return { color: `color-mix(in srgb, ${accentColor} 85%, white)`, opacity: 0.8 };
-				} else {
-					// Light theme: significantly lighten the accent so black text is readable
-					// Mix 30% accent with 70% white for a light pastel background
-					return { color: `color-mix(in srgb, ${accentColor} 30%, white)`, opacity: 0.8 };
-				}
-			}
-
-			return { color: accentColor || '#6496ff', opacity: 0.8 };
-		}
-		const color = isDark ? this.settings.cursorCustomColorDark : this.settings.cursorCustomColorLight;
-		return { color, opacity: 0.8 };
-	}
-
-	getRelativeLuminance(r: number, g: number, b: number): number {
-		const rsRGB = r / 255;
-		const gsRGB = g / 255;
-		const bsRGB = b / 255;
-
-		const rLinear = rsRGB <= 0.03928 ? rsRGB / 12.92 : Math.pow((rsRGB + 0.055) / 1.055, 2.4);
-		const gLinear = gsRGB <= 0.03928 ? gsRGB / 12.92 : Math.pow((gsRGB + 0.055) / 1.055, 2.4);
-		const bLinear = bsRGB <= 0.03928 ? bsRGB / 12.92 : Math.pow((bsRGB + 0.055) / 1.055, 2.4);
-
-		return 0.2126 * rLinear + 0.7150 * gLinear + 0.0722 * bLinear;
-	}
-
-	getContrastRatio(color1: string, color2: string): number {
-		const rgb1 = this.resolveColorToRgb(color1);
-		const rgb2 = this.resolveColorToRgb(color2);
-
-		const L1 = this.getRelativeLuminance(rgb1.r, rgb1.g, rgb1.b);
-		const L2 = this.getRelativeLuminance(rgb2.r, rgb2.g, rgb2.b);
-
-		const lighter = Math.max(L1, L2);
-		const darker = Math.min(L1, L2);
-
-		return (lighter + 0.05) / (darker + 0.05);
-	}
-
-	getContrastColor(cursorBackgroundColor: string): string {
-		const computedStyle = getComputedStyle(document.body);
-		
-		// Get theme colors for candidate text colors
-		const bgColor = computedStyle.getPropertyValue('--background-primary').trim() || '#ffffff';
-		const textColor = computedStyle.getPropertyValue('--text-normal').trim() || '#000000';
-		const textOnAccent = computedStyle.getPropertyValue('--text-on-accent').trim();
-		
-		// Resolve the cursor background color to RGB for contrast calculation
-		// This handles CSS variables like --interactive-accent
-		let resolvedCursorColor = cursorBackgroundColor;
-		if (cursorBackgroundColor.startsWith('var(') || cursorBackgroundColor.startsWith('color-mix')) {
-			// Create temp element to resolve the color
-			const temp = document.createElement('div');
-			temp.style.cssText = `background-color: ${cursorBackgroundColor}; display: none;`;
-			document.body.appendChild(temp);
-			resolvedCursorColor = getComputedStyle(temp).backgroundColor;
-			document.body.removeChild(temp);
-		}
-		
-		// Candidate text colors to try, in order of preference:
-		// 1. Theme's --text-on-accent (if available) - designed for text on accent colors
-		// 2. White (#ffffff) - works well on dark/medium backgrounds
-		// 3. Black (#000000) - works well on light backgrounds
-		// 4. Theme's normal text color
-		// 5. Theme's background color (inverted from normal)
-		const candidates: { color: string; priority: number }[] = [];
-		
-		if (textOnAccent) {
-			candidates.push({ color: textOnAccent, priority: 1 });
-		}
-		candidates.push({ color: '#ffffff', priority: 2 });
-		candidates.push({ color: '#000000', priority: 3 });
-		candidates.push({ color: textColor, priority: 4 });
-		candidates.push({ color: bgColor, priority: 5 });
-		
-		// Calculate contrast ratios and find the best option
-		let bestColor = '#ffffff';
-		let bestContrast = 0;
-		let bestPriority = Infinity;
-		
-		for (const candidate of candidates) {
-			try {
-				const contrast = this.getContrastRatio(resolvedCursorColor, candidate.color);
-				// Prefer higher contrast, but among similar contrast levels, prefer lower priority
-				// Use a threshold of 0.5 to consider contrast "similar"
-				if (contrast > bestContrast + 0.5 || 
-					(contrast > bestContrast - 0.5 && candidate.priority < bestPriority)) {
-					bestContrast = contrast;
-					bestColor = candidate.color;
-					bestPriority = candidate.priority;
-				}
-			} catch (e) {
-				// Skip invalid colors
-			}
-		}
-		
-		// Minimum contrast ratio for readability (WCAG AA for normal text is 4.5:1)
-		// If we can't achieve good contrast, at least return the best we found
-		return bestColor;
-	}
 
 	private updateCursorStyles(markerColor: string, contrastColor: string): void {
 		if (this.styleElement) {
@@ -617,59 +506,7 @@ export default class VisibleCursorPlugin extends Plugin {
 		document.head.appendChild(this.styleElement);
 	}
 
-	hexToRgb(hex: string): { r: number, g: number, b: number } {
-		if (hex.startsWith('rgb')) {
-			const matches = hex.match(/\d+/g);
-			if (matches && matches.length >= 3) {
-				return {
-					r: parseInt(matches[0]),
-					g: parseInt(matches[1]),
-					b: parseInt(matches[2])
-				};
-			}
-		}
-		const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-		return result ? {
-			r: parseInt(result[1], 16),
-			g: parseInt(result[2], 16),
-			b: parseInt(result[3], 16)
-		} : { r: 100, g: 150, b: 255 };
-	}
 
-	/**
-	 * Resolve any CSS color (including color-mix(), var(), etc.) to RGB values
-	 * by creating a temporary element and reading the computed color
-	 */
-	resolveColorToRgb(color: string): { r: number, g: number, b: number } {
-		// First try parsing as hex or rgb
-		if (color.startsWith('#') || color.startsWith('rgb')) {
-			return this.hexToRgb(color);
-		}
-		
-		// For color-mix(), var(), or other CSS functions, use a temporary element
-		try {
-			const temp = document.createElement('div');
-			temp.style.cssText = `color: ${color}; display: none;`;
-			document.body.appendChild(temp);
-			const computed = getComputedStyle(temp).color;
-			document.body.removeChild(temp);
-			
-			// Parse the computed rgb() or rgba() value
-			const matches = computed.match(/\d+/g);
-			if (matches && matches.length >= 3) {
-				return {
-					r: parseInt(matches[0]),
-					g: parseInt(matches[1]),
-					b: parseInt(matches[2])
-				};
-			}
-		} catch (e) {
-			// Fall through to default
-		}
-		
-		// Default fallback
-		return { r: 100, g: 150, b: 255 };
-	}
 
 	refreshDecorations() {
 		if (this.decorationView && this.decorationView.hasFocus) {

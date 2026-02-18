@@ -4,7 +4,7 @@ export default defineConfig({
 	test: {
 		environment: 'node',
 		globals: true,
-		pool: 'forks',
+		pool: 'vmThreads', // Updated for Vitest 4.0+ compatibility
 		setupFiles: ['./tests/setup.ts'],
 		include: ['tests/**/*.test.ts'],
 		coverage: {
