@@ -55,3 +55,5 @@ if (typeof global !== 'undefined' && !global.performance) {
 		now: () => Date.now()
 	};
 }
+
+export {};
