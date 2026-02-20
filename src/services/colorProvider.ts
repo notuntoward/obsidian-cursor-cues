@@ -10,7 +10,7 @@ import {
  * Encapsulates all color-related logic and theme detection
  * Pure functions - no Obsidian API dependencies
  */
-export class ColorService {
+export class ColorProvider {
   /**
    * Get the cursor color based on settings and theme
    */

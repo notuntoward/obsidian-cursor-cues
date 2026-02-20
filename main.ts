@@ -2,7 +2,7 @@ import { Plugin, MarkdownView } from 'obsidian';
 import { EditorView, ViewPlugin, ViewUpdate, Decoration, DecorationSet, WidgetType } from '@codemirror/view';
 import { RangeSetBuilder } from '@codemirror/state';
 import { VisibleCursorPluginSettings, DEFAULT_SETTINGS, VisibleCursorSettingTab } from './settings';
-import { ColorService } from './src/services/colorService';
+import { ColorProvider } from './src/services/colorProvider';
 import { FlashScheduler, type FlashState } from './src/services/flashScheduler';
 import { FlashRenderer } from './src/services/flashRenderer';
 import { hexToRgb } from './src/utils';
@@ -84,7 +84,7 @@ export default class VisibleCursorPlugin extends Plugin {
 	private boundClickEndFence: () => void;
 
 	// Services
-	private colorService: ColorService;
+	private colorProvider: ColorProvider;
 	private flashScheduler: FlashScheduler;
 	private flashRenderer: FlashRenderer;
 
@@ -92,7 +92,7 @@ export default class VisibleCursorPlugin extends Plugin {
 		await this.loadSettings();
 
 		// Initialize services
-		this.colorService = new ColorService();
+		this.colorProvider = new ColorProvider();
 		this.flashScheduler = new FlashScheduler();
 		this.flashRenderer = new FlashRenderer();
 
@@ -165,8 +165,8 @@ export default class VisibleCursorPlugin extends Plugin {
 				}
 
 				const pos = view.state.selection.main.head;
-				const markerColor = plugin.colorService.getColor(plugin.settings).color;
-				const contrastColor = plugin.colorService.getContrastColor(markerColor);
+				const markerColor = plugin.colorProvider.getColor(plugin.settings).color;
+				const contrastColor = plugin.colorProvider.getContrastColor(markerColor);
 				plugin.updateCursorStyles(markerColor, contrastColor);
 
 				// Get the actual line height from font-size which is more reliable
@@ -358,7 +358,7 @@ export default class VisibleCursorPlugin extends Plugin {
 		const editorElement = editorView.contentDOM;
 		const editorRect = editorElement.getBoundingClientRect();
 		const lineHeight = editorView.defaultLineHeight;
-		const { color, opacity } = this.colorService.getColor(this.settings);
+		const { color, opacity } = this.colorProvider.getColor(this.settings);
 		const rgb = hexToRgb(color);
 		// Calculate highlight distance based on flashSize setting (in character widths)
 		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
@@ -398,7 +398,7 @@ export default class VisibleCursorPlugin extends Plugin {
 		const editorElement = editorView.contentDOM;
 		const editorRect = editorElement.getBoundingClientRect();
 		const lineHeight = editorView.defaultLineHeight;
-		const { color, opacity } = this.colorService.getColor(this.settings);
+		const { color, opacity } = this.colorProvider.getColor(this.settings);
 		const rgb = hexToRgb(color);
 		// Calculate highlight distance based on flashSize setting (in character widths)
 		const fontSize = parseFloat(getComputedStyle(editorElement).fontSize) || 16;
@@ -441,7 +441,7 @@ export default class VisibleCursorPlugin extends Plugin {
 		const cursorX = coords.left - editorRect.left;
 		const editorWidth = editorRect.width;
 		const cursorPercent = (cursorX / editorWidth) * 100;
-		const { color, opacity } = this.colorService.getColor(this.settings);
+		const { color, opacity } = this.colorProvider.getColor(this.settings);
 		const rgb = hexToRgb(color);
 
 		const peakOpacity = opacity;
