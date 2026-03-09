@@ -8,36 +8,59 @@ import { FlashRenderer } from './src/services/flashRenderer';
 import { hexToRgb, adjustColorForThinBar } from './src/utils';
 
 class EndOfLineWidget extends WidgetType {
-	constructor(private markerColor: string, private contrastColor: string, private style: 'block' | 'bar' = 'block', private lineHeight?: number) {
+	constructor(
+		private markerColor: string,
+		private contrastColor: string,
+		private style: 'block' | 'bar' = 'block',
+		private lineHeight?: number
+	) {
 		super();
 	}
 	toDOM() {
 		const span = document.createElement('span');
-		span.textContent = ' ';
-		
+		span.setAttribute('aria-hidden', 'true');
+
+		// All cursor widgets use a zero-size (width:0, height:0) wrapper with overflow:visible
+		// so they never affect inline layout or line-box height.  The visible cursor indicator
+		// is an absolutely-positioned child that overflows the wrapper without adding to it.
+		const cssHeight = this.lineHeight ? `${this.lineHeight}px` : '1em';
+		span.style.cssText = `
+			display: inline-block;
+			width: 0;
+			height: 0;
+			overflow: visible;
+			pointer-events: none;
+			vertical-align: text-bottom;
+			position: relative;
+			z-index: 1;
+		`;
+		const inner = document.createElement('span');
+		inner.setAttribute('aria-hidden', 'true');
 		if (this.style === 'bar') {
-			span.className = 'cursor-flash-bar';
-			const heightStyle = this.lineHeight ? `height: ${this.lineHeight}px;` : 'height: 1em;';
-			span.style.cssText = `
-				display: inline-block;
-				width: 4px;
-				${heightStyle}
+			inner.className = 'cursor-flash-bar';
+			inner.style.cssText = `
+				position: absolute;
+				left: 0;
+				bottom: 0;
+				width: 3px;
+				height: ${cssHeight};
 				background-color: ${this.markerColor};
 				pointer-events: none;
-				vertical-align: text-bottom;
-				margin-left: -1px;
 			`;
 		} else {
-			span.className = 'cursor-flash-block-mark';
-			span.style.cssText = `
+			inner.className = 'cursor-flash-block-mark';
+			inner.style.cssText = `
+				position: absolute;
+				left: 0;
+				bottom: 0;
+				width: 0.5em;
+				height: ${cssHeight};
 				background-color: ${this.markerColor};
 				color: ${this.contrastColor};
-				display: inline-block;
-				width: 0.5em;
 				pointer-events: none;
 			`;
 		}
-		span.setAttribute('aria-hidden', 'true');
+		span.appendChild(inner);
 		return span;
 	}
 }
@@ -92,6 +115,8 @@ export default class VisibleCursorPlugin extends Plugin {
 	private clickFenceActive: boolean = false;
 	private pendingFlashTrigger: string | null = null;
 	private scrollFlashSuppressedUntil: number = 0;
+	private endKeyPressedRecently: boolean = false;
+	private endKeyTimer: NodeJS.Timeout | null = null;
 	private boundStartFence: () => void;
 	private boundEndFenceSoon: () => void;
 	private boundClickEndFence: () => void;
@@ -225,21 +250,35 @@ export default class VisibleCursorPlugin extends Plugin {
 					const char = view.state.doc.sliceString(pos, pos + 1);
 					let isEOL = char === '\n' || char === '';
 
-					// Detect soft-wrap: if selection arrived from the right (assoc < 0),
-					// check if position pos is visually at the end of a wrapped line.
-					// coordsAtPos(pos, -1) gives coords approaching from the left (end of prev visual line),
-					// coordsAtPos(pos, 1) gives coords approaching from the right (start of next visual line).
-					// If they differ in vertical position, pos is a soft-wrap boundary.
+					// Detect soft-wrap end: the cursor is visually at the end of a wrapped visual line.
+					//
+					// CM6 sets assoc = -1 when the cursor is placed at a soft-wrap boundary end
+					// (e.g. via the END key on a wrapped line). We trust this directly without any
+					// DOM measurement — coordsAtPos is unreliable during the decoration update()
+					// callback because the DOM hasn't been re-measured yet at that point.
+					//
+					// We also guard against false positives: assoc = -1 can appear at any position,
+					// so we additionally require that:
+					//   1. lineWrapping is enabled (otherwise there are no soft-wrap boundaries), and
+					//   2. pos is NOT at the start of a hard document line (those have '\n' before them
+					//      and are handled by the isEOL branch, or are hard-line starts where assoc=-1
+					//      represents something other than a soft-wrap).
+					//
+					// The endKeyPressedRecently flag covers the rare case where CM lands the cursor
+					// at the soft-wrap boundary but uses assoc = 0 instead of -1.
 					let isSoftWrapEnd = false;
-					if (!isEOL && view.state.selection.main.assoc < 0) {
-						try {
-							const coordsLeft = view.coordsAtPos(pos, -1);
-							const coordsRight = view.coordsAtPos(pos, 1);
-							if (coordsLeft && coordsRight && Math.abs(coordsLeft.top - coordsRight.top) > (actualLineHeight * 0.5)) {
-								isSoftWrapEnd = true;
-							}
-						} catch (e) {
-							// coordsAtPos can throw; ignore and treat as non-soft-wrap
+					if (!isEOL && view.lineWrapping) {
+						const assoc = view.state.selection.main.assoc;
+						const docLine = view.state.doc.lineAt(pos);
+						// Only treat as soft-wrap end if pos is mid-doc-line (not at doc line start)
+						const isMidDocLine = pos > docLine.from;
+						if (isMidDocLine && (assoc < 0 || plugin.endKeyPressedRecently)) {
+							isSoftWrapEnd = true;
+							// Do NOT eagerly clear endKeyPressedRecently here.  CM6 may call
+							// update() more than once per keystroke (e.g. for selection state
+							// vs. cursor-position updates).  Clearing here would cause the flag
+							// to be missed by the cursor-position update that follows.
+							// The 100ms timer in the keydown handler is the sole owner of cleanup.
 						}
 					}
 
@@ -288,6 +327,21 @@ export default class VisibleCursorPlugin extends Plugin {
 		const plugin = this;
 
 		return EditorView.domEventHandlers({
+			keydown: (event: KeyboardEvent) => {
+				// Track End key presses so the decoration builder can detect when the cursor
+				// landed at a soft-wrap boundary via End (assoc stays 0, not -1, in this case).
+				if (event.key === 'End') {
+					plugin.endKeyPressedRecently = true;
+					if (plugin.endKeyTimer) clearTimeout(plugin.endKeyTimer);
+					// Clear the flag after a short delay (one animation frame is enough, but
+					// use 100ms as a safety margin for slow machines).
+					plugin.endKeyTimer = setTimeout(() => {
+						plugin.endKeyPressedRecently = false;
+						plugin.endKeyTimer = null;
+					}, 100);
+				}
+				return false; // Always let CM6 process the key; we only observe, never consume
+			},
 			scroll: (event: Event, view: EditorView) => {
 				if (!plugin.settings.flashOnWindowScrolls) return false;
 
@@ -625,6 +679,9 @@ export default class VisibleCursorPlugin extends Plugin {
 		}
 		if (this.scrollDebounceTimer) {
 			clearTimeout(this.scrollDebounceTimer);
+		}
+		if (this.endKeyTimer) {
+			clearTimeout(this.endKeyTimer);
 		}
 		// Remove global event listeners added in onload
 		window.removeEventListener('pointerdown', this.boundStartFence, { capture: true });
