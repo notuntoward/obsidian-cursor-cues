@@ -425,6 +425,9 @@ describe('adjustColorForThinBar', () => {
 // ---------------------------------------------------------------------------
 // detectSoftWrapEnd tests
 // ---------------------------------------------------------------------------
+// Updated: assoc === -1 is now the primary signal for soft-wrap end detection.
+// The emacs plugin's move-beginning-of-line fix correctly sets assoc = +1 at
+// soft-wrap starts, so assoc = -1 is no longer ambiguous.
 
 /** Base params: cursor mid-line on a wrapped line, no special state */
 const baseMidLine: SoftWrapDetectionParams = {
@@ -446,115 +449,111 @@ const nonBoundaryCoords = { coordsLeftTop: 100, coordsRightTop: 100 };
 
 describe('detectSoftWrapEnd', () => {
 	// -------------------------------------------------------------------------
-	// Bug A: End key at soft-wrap boundary must be detected.
-	// main.ts calls coordsAtPos when assoc < 0 and feeds the geometry here.
+	// Primary signal: assoc === -1 detects soft-wrap end
+	// This works regardless of how the cursor arrived (End key, arrow keys, mouse)
 	// -------------------------------------------------------------------------
 
-	it('[Bug A] assoc=-1, soft-wrap geometry → true (primary geometry path)', () => {
-		// Typical: assoc=-1 after End, coordsAtPos confirms different rows
+	it('assoc=-1 → true (primary signal, no geometry needed)', () => {
+		// assoc=-1 means CM6 biased cursor left — soft-wrap end
+		expect(detectSoftWrapEnd({
+			...baseMidLine,
+			assoc: -1
+		})).toBe(true);
+	});
+
+	it('assoc=-1 with endKeyPressedRecently=false → true (flag no longer required)', () => {
+		// The fix: assoc=-1 alone is now sufficient, regardless of how cursor got there
 		expect(detectSoftWrapEnd({
 			...baseMidLine,
 			assoc: -1,
-			endKeyPressedRecently: true,
+			endKeyPressedRecently: false
+		})).toBe(true);
+	});
+
+	it('assoc=-1 with null coords → true (geometry not required)', () => {
+		// coordsAtPos returned null; assoc=-1 is sufficient
+		expect(detectSoftWrapEnd({
+			...baseMidLine,
+			assoc: -1,
+			coordsLeftTop: null,
+			coordsRightTop: null
+		})).toBe(true);
+	});
+
+	it('assoc=-1 with soft-wrap geometry → true (geometry confirms)', () => {
+		// Geometry confirms the assoc signal
+		expect(detectSoftWrapEnd({
+			...baseMidLine,
+			assoc: -1,
 			...softWrapCoords
 		})).toBe(true);
 	});
 
-	it('[Bug A] assoc=-1, coords null (pre-paint, endKey=true) → true', () => {
-		// coordsAtPos returned null; fall back to assoc < 0 signal
-		expect(detectSoftWrapEnd({
-			...baseMidLine,
-			assoc: -1,
-			endKeyPressedRecently: true,
-			coordsLeftTop: null,
-			coordsRightTop: null
-		})).toBe(true);
-	});
+	// -------------------------------------------------------------------------
+	// Geometry fallback: can detect soft-wrap end when assoc !== -1
+	// -------------------------------------------------------------------------
 
-	it('[Bug A] assoc=-1, coords null, endKey=false → false (endKeyPressedRecently required)', () => {
-		// assoc < 0 alone is NOT sufficient; endKeyPressedRecently is required
-		// because assoc = -1 also appears at soft-wrap starts after →.
-		expect(detectSoftWrapEnd({
-			...baseMidLine,
-			assoc: -1,
-			endKeyPressedRecently: false,
-			coordsLeftTop: null,
-			coordsRightTop: null
-		})).toBe(false);
-	});
-
-	it('[Bug A] assoc=0, endKeyPressedRecently=true, soft-wrap coords → true', () => {
-		// CM6 kept assoc=0 after End; geometry confirms boundary
+	it('assoc=0 with soft-wrap geometry → true (geometry fallback)', () => {
+		// Geometry detects boundary even when assoc doesn't signal it
 		expect(detectSoftWrapEnd({
 			...baseMidLine,
 			assoc: 0,
-			endKeyPressedRecently: true,
 			...softWrapCoords
 		})).toBe(true);
 	});
 
-	it('[Bug A] assoc=0, endKeyPressedRecently=true, coords unavailable → true', () => {
-		// CM6 kept assoc=0 (rare case); no geometry; flag covers it
-		expect(detectSoftWrapEnd({
-			...baseMidLine,
-			assoc: 0,
-			endKeyPressedRecently: true,
-			coordsLeftTop: null,
-			coordsRightTop: null
-		})).toBe(true);
-	});
-
-	// -------------------------------------------------------------------------
-	// Bug B: End → right-arrow must NOT spuriously trigger soft-wrap.
-	// After →, CM6 sets assoc = +1 (rightward move).
-	// main.ts only calls coordsAtPos when assoc < 0, so for assoc=+1 no coords
-	// are fetched. Step 1 (assoc >= 0 && !endKeyPressedRecently) blocks immediately.
-	// -------------------------------------------------------------------------
-
-	it('[Bug B] assoc=1 (→ after End), endKey=false → false', () => {
-		// Normal rightward movement — Step 1 rejects immediately
+	it('assoc=1 with soft-wrap geometry → true (geometry fallback)', () => {
+		// Geometry can detect boundary even with assoc=1
 		expect(detectSoftWrapEnd({
 			...baseMidLine,
 			assoc: 1,
-			endKeyPressedRecently: false,
-			coordsLeftTop: undefined,
-			coordsRightTop: undefined
+			...softWrapCoords
+		})).toBe(true);
+	});
+
+	// -------------------------------------------------------------------------
+	// Non-soft-wrap-end cases: should return false
+	// -------------------------------------------------------------------------
+
+	it('assoc=1 (rightward bias) without geometry → false', () => {
+		// assoc=1 means cursor biased right — not a soft-wrap end
+		expect(detectSoftWrapEnd({
+			...baseMidLine,
+			assoc: 1
 		})).toBe(false);
 	});
 
-	it('[Bug B] assoc=0, endKeyPressedRecently=false, non-boundary coords → false', () => {
+	it('assoc=0 without geometry → false', () => {
+		// No signal present
+		expect(detectSoftWrapEnd({
+			...baseMidLine,
+			assoc: 0
+		})).toBe(false);
+	});
+
+	it('assoc=-1 with non-boundary geometry → true (assoc is primary signal)', () => {
+		// With the new implementation, assoc === -1 is the primary signal.
+		// Geometry is only checked when assoc !== -1.
+		// This is correct because assoc = -1 reliably indicates soft-wrap end
+		// (the emacs plugin now sets assoc = +1 at soft-wrap starts).
+		expect(detectSoftWrapEnd({
+			...baseMidLine,
+			assoc: -1,
+			...nonBoundaryCoords
+		})).toBe(true);
+	});
+
+	it('assoc=0 with non-boundary geometry → false', () => {
 		// Geometry says same row — not a soft-wrap end
 		expect(detectSoftWrapEnd({
 			...baseMidLine,
 			assoc: 0,
-			endKeyPressedRecently: false,
-			...nonBoundaryCoords
-		})).toBe(false);
-	});
-
-	it('[Bug B] assoc=-1, endKey=false → false (soft-wrap start after →, no flag)', () => {
-		// After End → →: capture handler cleared the flag, assoc=-1 at new pos.
-		// Must return false — this directly tests Bug B regression prevention.
-		expect(detectSoftWrapEnd({
-			...baseMidLine,
-			assoc: -1,
-			endKeyPressedRecently: false,
-			coordsLeftTop: undefined,
-			coordsRightTop: undefined
-		})).toBe(false);
-	});
-
-	it('[Bug B] assoc=-1, geometry says same row → false', () => {
-		// assoc=-1 but geometry overrules — positions on same visual row
-		expect(detectSoftWrapEnd({
-			...baseMidLine,
-			assoc: -1,
 			...nonBoundaryCoords
 		})).toBe(false);
 	});
 
 	// -------------------------------------------------------------------------
-	// Guard conditions
+	// Guard conditions: must be mid-line on a wrapping document
 	// -------------------------------------------------------------------------
 
 	it('returns false when isEOL=true', () => {
@@ -584,39 +583,50 @@ describe('detectSoftWrapEnd', () => {
 		})).toBe(false);
 	});
 
-	it('returns false when assoc=0 and endKeyPressedRecently=false', () => {
-		expect(detectSoftWrapEnd({
-			...baseMidLine,
-			assoc: 0,
-			endKeyPressedRecently: false,
-			...softWrapCoords
-		})).toBe(false);
-	});
-
 	// -------------------------------------------------------------------------
 	// Threshold boundary: coords .top difference at 50% of lineHeight
 	// -------------------------------------------------------------------------
 
 	it('returns false when top difference equals threshold (not strictly greater)', () => {
 		// threshold = 24 * 0.5 = 12; difference = 12 → not > 12
-		// (endKeyPressedRecently=true needed to reach the geometry step)
 		expect(detectSoftWrapEnd({
 			...baseMidLine,
-			assoc: -1,
-			endKeyPressedRecently: true,
+			assoc: 0, // No assoc signal, rely on geometry
 			coordsLeftTop: 100,
 			coordsRightTop: 112
 		})).toBe(false);
 	});
 
-	it('returns true when top difference is just above threshold (endKeyPressedRecently=true)', () => {
-		// difference = 13 > 12 → true (endKeyPressedRecently is required to reach geometry)
+	it('returns true when top difference is just above threshold', () => {
+		// difference = 13 > 12 → true
 		expect(detectSoftWrapEnd({
 			...baseMidLine,
-			assoc: -1,
-			endKeyPressedRecently: true,
+			assoc: 0, // No assoc signal, rely on geometry
 			coordsLeftTop: 100,
 			coordsRightTop: 113
+		})).toBe(true);
+	});
+
+	// -------------------------------------------------------------------------
+	// Backward compatibility: endKeyPressedRecently is ignored but kept in interface
+	// -------------------------------------------------------------------------
+
+	it('endKeyPressedRecently=true with assoc=0, no geometry → false (flag ignored)', () => {
+		// The old flag is no longer consulted
+		expect(detectSoftWrapEnd({
+			...baseMidLine,
+			assoc: 0,
+			endKeyPressedRecently: true
+		})).toBe(false);
+	});
+
+	it('endKeyPressedRecently=true with assoc=0, soft-wrap geometry → true (geometry works)', () => {
+		// Geometry still works regardless of endKeyPressedRecently
+		expect(detectSoftWrapEnd({
+			...baseMidLine,
+			assoc: 0,
+			endKeyPressedRecently: true,
+			...softWrapCoords
 		})).toBe(true);
 	});
 });

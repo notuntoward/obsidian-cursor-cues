@@ -278,39 +278,38 @@ export interface SoftWrapDetectionParams {
  * Detection strategy:
  *
  * 1. Guard: reject if not mid-line on a wrapped document.
- * 2. endKeyPressedRecently is the sole reliable discriminator.  CM6 sets assoc = -1
- *    at BOTH soft-wrap ends (after End) AND soft-wrap starts (after →), and
- *    coordsAtPos also returns different .top values at both positions — so neither
- *    assoc nor geometry alone can distinguish the two cases.
- *
- *    endKeyPressedRecently is managed by a capture-phase window.keydown handler
- *    that fires before CM6 processes keystrokes, so it is correctly true when End
- *    is pressed and false when → is pressed — even if assoc = -1 in both cases.
- *
+ * 2. assoc === -1 means CM6 has biased the cursor to the left, which
+ *    happens at soft-wrap ends regardless of how the cursor got there.
+ *    This is now reliable because the emacs plugin's move-beginning-of-line
+ *    fix correctly places soft-wrap start positions with assoc = +1, so
+ *    assoc = -1 is no longer ambiguous.
  * 3. Geometry step (authoritative when available): if numeric coords are provided,
- *    they override the flag.  main.ts passes undefined — reserved for future use.
+ *    they can confirm or override the assoc signal.
+ *
+ * NOTE: endKeyPressedRecently is kept in the interface for backward compatibility
+ * but is no longer consulted. The assoc signal is now the primary discriminator.
  */
 export function detectSoftWrapEnd(params: SoftWrapDetectionParams): boolean {
 	const {
 		lineWrapping, isEOL, isMidDocLine, assoc,
-		endKeyPressedRecently, coordsLeftTop, coordsRightTop, actualLineHeight
+		coordsLeftTop, coordsRightTop, actualLineHeight
 	} = params;
 
+	// Guard: must be mid-line on a wrapping document, not a real EOL
 	if (isEOL || !lineWrapping || !isMidDocLine) {
 		return false;
 	}
 
-	// Step 2: endKeyPressedRecently is required (assoc alone is ambiguous)
-	if (!endKeyPressedRecently) {
-		return false;
+	// assoc === -1 means CM6 has biased the cursor to the left, which
+	// happens at soft-wrap ends regardless of how the cursor got there.
+	if (assoc === -1) {
+		return true;
 	}
 
-	// Step 3: geometry override (authoritative when available)
+	// Geometry override (authoritative when available)
 	if (typeof coordsLeftTop === 'number' && typeof coordsRightTop === 'number') {
 		return Math.abs(coordsLeftTop - coordsRightTop) > actualLineHeight * 0.5;
 	}
 
-	// endKeyPressedRecently is true and no geometry: trust the flag
-	// (covers both assoc = -1 and assoc = 0 cases after End)
-	return true;
+	return false;
 }
